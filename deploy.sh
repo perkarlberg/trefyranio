@@ -17,6 +17,9 @@ PY="$ROOT/.venv/bin/python"
 echo "==> Exporting web data from forecast artifacts"
 "$PY" -m trefyranio.web_export
 
+echo "==> Generating social share image from live forecast"
+"$PY" "$ROOT/make_og.py"
+
 echo "==> Building Astro site"
 cd "$ROOT/web" && npm run build
 
