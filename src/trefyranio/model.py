@@ -32,7 +32,8 @@ import numpy as np
 import numpyro
 import numpyro.distributions as dist
 import pandas as pd
-from numpyro.infer import MCMC, NUTS
+from numpyro.infer import MCMC, NUTS, init_to_median
+from numpyro.diagnostics import split_gelman_rubin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
@@ -196,58 +197,79 @@ def _full_logits(alr: jnp.ndarray) -> jnp.ndarray:
     return jnp.concatenate([pad, alr], axis=-1)
 
 
-def model(data: ModelData, use_velocity: bool = True):
-    """Damped local-linear-trend poll model. With ``use_velocity=False`` the
-    velocity component is dropped, leaving a plain local-level random walk — the
-    A/B baseline for testing whether momentum reduces rising-party lag."""
+# Latent scales — FIXED, not sampled. Sampling a global scale that multiplies many
+# non-centred innovations is Neal's funnel, and that (× the velocity) was the main
+# cause of non-convergence (r-hat 15-34, ESS≈2). Fixing the scales removes the
+# funnels; values picked so the trend tracks the polls without overfitting.
+SIGMA_LVL = 0.03      # per-week level innovation (ALR)
+SIGMA_HOUSE = 0.05    # per-pollster house-effect scale (ALR)
+KAPPA = 200.0         # Dirichlet-Multinomial concentration (overdispersion)
+DRIFT_SIGMA = 0.0015  # per-week per-party drift prior (ALR) — momentum, projected
+SIGMA_VEL = 0.006     # velocity innovation (only if use_velocity; also fixed)
+VEL_DAMP = 0.8        # velocity damping
+
+
+def model(data: ModelData, use_velocity: bool = False):
+    """Local-level random walk in ALR with FIXED scales (convergence fix) + per-
+    pollster house effects (centred). All scale parameters are constants, so the
+    target is well-conditioned and NUTS mixes (no Neal's funnel). Velocity is OFF
+    by default — it was the main mixing culprit and its momentum gain was marginal;
+    the optional branch keeps a *fixed*-scale damped velocity for A/B only.
+    Likelihood: Dirichlet-Multinomial with fixed overdispersion."""
     T, P = data.n_weeks, len(data.pollsters)
 
-    sigma_lvl = numpyro.sample("sigma_lvl", dist.HalfNormal(0.05))
-    kappa = numpyro.sample("kappa", dist.Gamma(2.0, 0.02))          # over-dispersion
-    sigma_house = numpyro.sample("sigma_house", dist.HalfNormal(0.1))
-
-    house = numpyro.sample("house", dist.Normal(0, sigma_house).expand([P, KM1]).to_event(2))
-    # Identify house effects: center them so the latent path is the consensus.
-    house = house - house.mean(axis=0)
+    house = numpyro.sample("house", dist.Normal(0, SIGMA_HOUSE).expand([P, KM1]).to_event(2))
+    house = house - house.mean(axis=0)  # centred → latent path is the consensus
 
     level0 = numpyro.sample(
         "level0", dist.Normal(jnp.asarray(data.anchor_alr), 0.15).to_event(1)
     )
+    # Per-party drift: a single well-identified slope per party (no funnel) that
+    # carries momentum — projected forward to election day. Replaces the
+    # per-week velocity, which broke mixing.
+    drift = numpyro.sample("drift", dist.Normal(0, DRIFT_SIGMA).expand([KM1]).to_event(1))
     z_lvl = numpyro.sample("z_lvl", dist.Normal(0, 1).expand([T, KM1]).to_event(2))
-
-    if use_velocity:
-        sigma_vel = numpyro.sample("sigma_vel", dist.HalfNormal(0.01))  # small: shrink momentum
-        phi = numpyro.sample("phi", dist.Beta(8.0, 2.0))               # damping ~0.8
-        z_vel = numpyro.sample("z_vel", dist.Normal(0, 1).expand([T, KM1]).to_event(2))
-    else:
-        sigma_vel, phi, z_vel = 0.0, 0.0, jnp.zeros((T, KM1))
+    z_vel = (numpyro.sample("z_vel", dist.Normal(0, 1).expand([T, KM1]).to_event(2))
+             if use_velocity else jnp.zeros((T, KM1)))
 
     def step(carry, zs):
         level, vel = carry
         zl, zv = zs
-        vel = phi * vel + sigma_vel * zv
-        level = level + vel + sigma_lvl * zl
+        vel = VEL_DAMP * vel + SIGMA_VEL * zv
+        level = level + drift + vel + SIGMA_LVL * zl
         return (level, vel), level
 
-    init = (level0, jnp.zeros(KM1))
-    _, levels = jax.lax.scan(step, init, (z_lvl, z_vel))   # levels: (T, KM1)
+    _, levels = jax.lax.scan(step, (level0, jnp.zeros(KM1)), (z_lvl, z_vel))
     numpyro.deterministic("levels", levels)
 
     obs_alr = levels[data.week] + house[data.pollster]      # (n_polls, KM1)
     p_obs = jax.nn.softmax(_full_logits(obs_alr), axis=-1)  # (n_polls, K)
     numpyro.sample(
         "counts",
-        dist.DirichletMultinomial(kappa * p_obs, total_count=jnp.asarray(data.totals)),
+        dist.DirichletMultinomial(KAPPA * jnp.clip(p_obs, 1e-7, 1.0),
+                                  total_count=jnp.asarray(data.totals)),
         obs=jnp.asarray(data.counts),
     )
 
 
-def fit(data: ModelData, warmup: int = 600, samples: int = 600, seed: int = 0,
-        use_velocity: bool = True) -> dict:
-    kernel = NUTS(model, target_accept_prob=0.9)
-    mcmc = MCMC(kernel, num_warmup=warmup, num_samples=samples, num_chains=1,
-                progress_bar=False)
+def fit(data: ModelData, warmup: int = 600, samples: int = 500, seed: int = 0,
+        use_velocity: bool = False, num_chains: int = 4) -> dict:
+    # Multiple chains (vectorized) → a seed-robust posterior + an r-hat check.
+    # init_to_median starts at the prior medians (drift≈0, level0=anchor) — avoids
+    # the extreme-logit init the cumulative drift can otherwise produce.
+    kernel = NUTS(model, target_accept_prob=0.9, init_strategy=init_to_median)
+    mcmc = MCMC(kernel, num_warmup=warmup, num_samples=samples, num_chains=num_chains,
+                chain_method="vectorized", progress_bar=False)
     mcmc.run(jax.random.PRNGKey(seed), data, use_velocity=use_velocity)
+
+    # Convergence check on the election-day shares.
+    lev = np.asarray(mcmc.get_samples(group_by_chain=True)["levels"])[:, :, data.election_week, :]
+    full = np.concatenate([np.zeros(lev.shape[:-1] + (1,)), lev], axis=-1)
+    e = np.exp(full - full.max(-1, keepdims=True))
+    sh = e / e.sum(-1, keepdims=True)
+    worst = max(float(split_gelman_rubin(sh[:, :, k])) for k in range(sh.shape[-1]))
+    print(f"convergence: worst election-day r-hat {worst:.3f}"
+          + ("" if worst < 1.05 else "  ⚠️ NOT CONVERGED"))
     return mcmc.get_samples()
 
 

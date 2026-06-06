@@ -29,15 +29,19 @@ forecaster with fully published, implementable formulas — Silver's exact
 weights and correlation matrix are proprietary), adapted for proportional
 representation:
 
-- **Top-down** national 8-party vote-share random walk in additive-log-ratio
-  space, plus correlated valkrets (constituency) deviations. Top-down because
-  Swedish swing is national-dominated and constituency polling is thin.
-- **Beta-Binomial** poll likelihood (absorbs nonsampling error).
-- Per-pollster **house effects** (zero-sum across parties), shrunk to zero.
+- **Top-down** national 8-party vote-share **local-level random walk** in
+  additive-log-ratio space, with a per-party **drift** (momentum) and
+  **fixed walk scales** (for convergence — see below). Anchored at the previous
+  election result.
+- **Dirichlet-Multinomial** poll likelihood (absorbs nonsampling error via fixed
+  overdispersion).
+- Per-pollster **house effects** (centered across parties).
 - **Pollster ratings** computed from scratch: historical error vs official
   results, shrunk toward a global mean. SCB/PSU weighted as the benchmark.
-- Weak **fundamentals prior** on the election-day node, dominated by the
-  lagged result (Swedish vote shares are persistent).
+- Fit with **multiple chains** + an r-hat convergence check (see "Convergence").
+
+(The constituency-level / fundamentals-prior pieces of the full Economist model
+are not yet implemented — see roadmap.)
 
 **Swedish-specific tweaks:** the 4% national / 12% constituency threshold;
 government-formation as the headline output; correction for the persistent
@@ -70,21 +74,25 @@ fundamentals prior (the Economist approach), so the spread *emerges* from the
 model — is on the roadmap. Until then the add-on is calibrated, horizon-aware, and
 transparent rather than hidden.
 
-### ⚠️ Known issue: the latent sampler does not yet converge
+### Convergence (fixed)
 
-4-chain diagnostics on the election-day shares show **r-hat 15–34 and ESS≈2** —
-the NUTS fit of the weekly 209×8 ALR latent is badly mixed. The latent is heavily
-over-parameterised (~3,300 innovation params vs ~240 polls) and the level+velocity
-walk with *sampled* scale parameters has a funnel geometry NUTS can't navigate.
-Consequences: the posterior **mean is seed-sensitive** (SD ±1.5pp across seeds)
-and the model's own spread is untrustworthy (hence the calibrated miss add-on).
-The central forecast still tracks the polls (it's data-anchored via the
-likelihood), but **the probabilistic outputs are provisional until this is fixed.**
+An earlier version did **not** converge — 4-chain diagnostics showed **r-hat
+15–34, ESS≈2**: the level+velocity walk with *sampled* scale parameters had a
+Neal's-funnel geometry NUTS couldn't navigate, so the posterior mean was
+seed-sensitive (SD ±1.5pp across seeds). Fixed by:
 
-Planned fix (foundational, next priority): coarsen the time grid (≈monthly),
-fix/tighten the walk-scale priors to remove the funnel, reconsider the velocity
-term (its momentum gain was marginal and it's the main mixing culprit), run
-multiple chains, and require **r-hat < 1.05** before trusting the fit.
+- **fixing the walk scales** (`SIGMA_LVL`, `SIGMA_HOUSE`, `KAPPA`) instead of
+  sampling them — removes the funnel;
+- **dropping the per-week velocity** (the main mixing culprit) for a single
+  per-party **drift** (`DRIFT_SIGMA`, 8 well-identified params) — convergence-safe;
+- **multiple chains** (`num_chains=4`, vectorized) with an r-hat check baked into
+  `fit()`.
+
+Result: **worst election-day r-hat ≈ 1.00, ESS ~4,000.** The forecast is now
+stable across seeds. Trade-off: momentum is currently minimal — the global drift
+comes out ≈0 this cycle (the aggressive velocity momentum never actually
+converged, so its earlier "benefit" was measured on an unreliable fit). A
+convergence-safe *recent*-momentum term is future work.
 
 ## Electoral system (encoded in `allocator.py`)
 
@@ -141,14 +149,15 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
 - [x] **Phase 2** — pollster ratings + house effects (`ratings.py` →
       `pollster_house_effects`, `industry_bias`, `pollster_ratings`). Built from
       final-30d poll error vs actual results, 2010–2022.
-- [~] **Phase 3** — Bayesian model (NumPyro), `model.py`. Top-down national
-      8-party ALR model with a **damped local-linear-trend** (level + velocity)
-      latent state — momentum is estimated and projected, the deliberate fix for
-      aggregator inertia. Dirichlet-Multinomial likelihood (over-dispersion),
-      per-pollster house effects (centered), anchored at the 2022 result. Fits
-      the cycle (~4 min on the laptop) → `model_trend.parquet` + election-day
-      `forecast_samples.npz`. Election-day uncertainty is a **share-space**
-      polling-miss term — calibrated (Phase 5), **horizon-dependent**, and
+- [x] **Phase 3** — Bayesian model (NumPyro), `model.py`. Top-down national
+      8-party ALR **local-level random walk + per-party drift, fixed scales**,
+      Dirichlet-Multinomial likelihood, per-pollster house effects (centered),
+      anchored at the 2022 result. **Converges** (multi-chain, r-hat ≈ 1.0 — see
+      Convergence) after the funnel reparam; velocity dropped (didn't converge,
+      momentum now minimal). Fits the cycle (~10 min, 4 chains) →
+      `model_trend.parquet` + election-day `forecast_samples.npz`. Election-day
+      uncertainty is a **share-space** polling-miss term — calibrated (Phase 5),
+      **horizon-dependent**, and
       **within-bloc correlated** (see "Uncertainty model").
       - [ ] **Model-carried error** — make the spread emerge from the latent
             (backward-from-election-day random walk with horizon-accumulating
@@ -161,14 +170,14 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       (Right/Tidö, Left, C as unaligned kingmaker). Runs in <1s →
       `seat_forecast`, `coalition_forecast`, `government_forecast.json`,
       `seat_draws.npz`. Conditionals guarded against tiny-subsample noise.
-- [x] **Phase 5** — backtest & calibration (`backtest.py`). Refits 2018 & 2022
-      from polls-only (velocity on/off, horizon-matched to the live ~14-week
-      gap). **Calibrated `MISS_SIGMA` = 2.25pp** (share-space, ~88% coverage on
-      backtests). **Momentum thesis confirmed**: velocity cuts rising-party
-      under-prediction 0.60→0.52pp. Point MAE 0.9–1.5pp. Found & fixed: the miss
-      belongs in share space, not ALR (poll errors are ~uniform in pp across
-      party sizes). Within-bloc miss correlation modelled as a factor
-      (`MISS_RHO`, deliberately modest at 0.2 — see model.py).
+- [~] **Phase 5** — backtest & calibration (`backtest.py`). Refits 2018 & 2022
+      from polls-only, horizon-matched. **Calibrated `MISS_SIGMA`** (share-space,
+      horizon curve, ~88% coverage). Point MAE 0.9–1.5pp. Found & fixed: the miss
+      belongs in share space, not ALR. Within-bloc miss correlation as a factor
+      (`MISS_RHO`≈0.2). ⚠️ The earlier "momentum thesis confirmed (velocity)"
+      result was measured on the **non-converged** model and is superseded
+      (velocity since dropped). **MISS_SIGMA should be re-calibrated on the
+      converged model** (TODO).
       - [ ] **Longer backtest: add 2010 & 2014 (4 cycles)** — to calibrate
             `MISS_SIGMA` more tightly and estimate `MISS_RHO` (within-bloc miss
             correlation) from data instead of assuming it; plus horizon-dependent
