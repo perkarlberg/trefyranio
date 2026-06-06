@@ -54,6 +54,23 @@ def test_ratings_weight_centered_and_ordered():
     assert r.loc["Good", "weight"] > r.loc["Bad", "weight"]
 
 
+def test_ratings_weight_bounded_for_extreme_outlier():
+    """A pollster far more accurate than the field must not produce an infinite
+    or negative weight (the predictive_error floor guards the division)."""
+    rows = [
+        ("Perfect", "S", 2018, 0.0), ("Perfect", "M", 2018, 0.0),
+        ("Perfect", "S", 2022, 0.0), ("Perfect", "M", 2022, 0.0),
+        ("Awful", "S", 2018, 0.10), ("Awful", "M", 2018, -0.10),
+        ("Awful", "S", 2022, 0.10), ("Awful", "M", 2022, -0.10),
+    ]
+    df = pd.DataFrame(rows, columns=["pollster", "party", "election_year", "error"])
+    df["abs_error"] = df["error"].abs()
+    r = pollster_ratings(df)
+    assert r["weight"].notna().all()
+    assert (r["weight"] > 0).all()
+    assert r["weight"].max() < 10  # bounded, not runaway
+
+
 @pytest.mark.skipif(
     not (ratings.PROCESSED_DIR / "pollster_ratings.parquet").exists(),
     reason="ratings not built",

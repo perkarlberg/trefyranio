@@ -44,6 +44,7 @@ ELECTION_DATES = {
 }
 FINAL_WINDOW_DAYS = 30   # a pollster's "final" polls = those within 30d of E-day
 SHRINK_K = 1.5           # shrinkage strength (in "elections covered")
+WEIGHT_FLOOR_FRAC = 0.4  # floor on predictive_error (× field avg) → caps weight at 2.5×
 
 
 def final_poll_errors(polls: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
@@ -123,8 +124,12 @@ def pollster_ratings(errs: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     g["plus_minus"] = g["raw_plus_minus"] * g["n_elections"] / (g["n_elections"] + SHRINK_K)
 
+    # Predictive error is floored at 40% of the field average so an unusually
+    # accurate pollster (strongly negative shrunk plus-minus) can't drive the
+    # denominator to zero/negative and send its weight to infinity. The floor
+    # caps any single pollster's pre-normalisation weight at 2.5×.
     field_global = pe["poll_err"].mean()
-    g["predictive_error"] = field_global + g["plus_minus"]
+    g["predictive_error"] = (field_global + g["plus_minus"]).clip(lower=WEIGHT_FLOOR_FRAC * field_global)
     g["weight"] = field_global / g["predictive_error"]
     g["weight"] = g["weight"] / g["weight"].mean()  # center on 1.0
     return g.sort_values("predictive_error").reset_index(drop=True)
