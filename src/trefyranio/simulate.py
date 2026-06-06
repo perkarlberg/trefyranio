@@ -151,9 +151,12 @@ def build() -> None:
     # ensemble, not just the ~600 NUTS draws.
     npz = np.load(PROCESSED_DIR / "forecast_samples.npz", allow_pickle=True)
     eat = npz["election_alr_trend"]                          # (n_post, KM1)
+    # Use the horizon-aware miss sigma the model fit saved (not a fixed constant),
+    # so the simulator's spread matches the forecast's horizon.
+    sigma = float(npz["miss_sigma"]) if "miss_sigma" in npz else MISS_SIGMA
     rng = np.random.default_rng(SEAT_DRAW_SEED)
     shares = forecast_with_miss(eat[rng.integers(0, eat.shape[0], N_SIM)],
-                                sigma_miss=MISS_SIGMA, seed=SEAT_DRAW_SEED)
+                                sigma_miss=sigma, seed=SEAT_DRAW_SEED)
     seats = simulate_seats(shares, PARTY_ORDER)             # (N_SIM, 8)
 
     seat_df = seat_distribution(seats)

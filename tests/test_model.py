@@ -19,7 +19,15 @@ from trefyranio.model import (
     _alr,
     _softmax_with_ref,
     forecast_with_miss,
+    miss_sigma_for_horizon,
 )
+
+
+def test_miss_sigma_grows_with_horizon():
+    # Tighter near the election, wider far out; ~2.25pp at the 14-week calibration point.
+    assert miss_sigma_for_horizon(0) < miss_sigma_for_horizon(8) < miss_sigma_for_horizon(20)
+    assert miss_sigma_for_horizon(14) == pytest.approx(0.0225, abs=2e-3)
+    assert miss_sigma_for_horizon(0) == pytest.approx(0.016, abs=1e-3)
 
 
 def test_alr_softmax_roundtrip():

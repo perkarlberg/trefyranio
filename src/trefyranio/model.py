@@ -71,19 +71,31 @@ def cycle_for(year: int) -> CycleConfig:
 
 CYCLE_2026 = cycle_for(2026)
 
-# Polling-miss error added to the election-day forecast, in SHARE space (pp).
-# The latent walk's own variance collapses near zero and would project to
-# election day with false certainty, so this term carries the real forecast
-# spread. It is applied in post-processing (no likelihood).
+# Election-day polling-miss spread, in SHARE space (pp). Applied in
+# post-processing (no likelihood). Share space — not ALR — because realized poll
+# errors are ~uniform in pp across party sizes.
 #
-# CALIBRATED (Phase 5) by backtesting 2018 & 2022 from polls cut ~14 weeks
-# before each election (matching the live forecast's gap) and sizing the term so
-# the 80% interval has ~80-85% coverage. Share space — NOT ALR — because realized
-# poll errors are ~uniform in pp across party sizes (a 30% and a 5% party both
-# miss by ~1-2pp), whereas a single ALR sigma blows up small parties / over-
-# widens big ones. NOTE: should become horizon-dependent (shrinks as the
-# election nears and polls accumulate); recalibrate at shorter horizons later.
-MISS_SIGMA = 0.0225  # 2.25pp — coverage-cal @14w (≈88% on 2018/2022 backtests)
+# HONEST CAVEAT: this spread is a calibrated add-on, NOT emergent from the latent
+# walk — whose innovation variance is estimated tiny on the slowly-moving
+# inter-election series and so projects to election day with false certainty. A
+# hand-fit term carries the forecast error. The principled fix (model-carried
+# error: an Economist-style backward-from-election-day random walk with
+# horizon-accumulating innovations + an explicit election-day fundamentals prior)
+# is deliberate future work; see README "Uncertainty model".
+#
+# HORIZON-DEPENDENT: calibrated at TWO horizons (election-eve H≈0 and H=14w) on
+# 2018 & 2022 → a variance-accumulation curve. H = weeks from the last poll to
+# election; uncertainty grows with H (the forecast tightens as the election nears).
+MISS_SIGMA_FLOOR = 0.016        # ≈1.6pp election-eve (H≈0), coverage-cal
+MISS_SIGMA_VAR_SLOPE = 1.79e-5  # share² added per week (from the 0→14w calibration)
+
+
+def miss_sigma_for_horizon(weeks: float) -> float:
+    """Share-space polling-miss sigma at ``weeks`` from the last poll to election."""
+    return float(np.sqrt(MISS_SIGMA_FLOOR ** 2 + MISS_SIGMA_VAR_SLOPE * max(0.0, weeks)))
+
+
+MISS_SIGMA = miss_sigma_for_horizon(14)  # ≈0.0225; default for the live ~14w horizon
 
 # Cross-party correlation of the polling miss. Real misses co-move within a bloc
 # (parties draw from a shared pool / a common pro-anti-incumbent mood), so an
@@ -294,7 +306,11 @@ def forecast_with_miss(
     return noisy / noisy.sum(axis=-1, keepdims=True)
 
 
-def build(warmup: int = 600, samples: int = 600) -> None:
+def build(warmup: int = 800, samples: int = 2000) -> None:
+    # More posterior samples → a stabler election-day mean. With only ~600 the
+    # forecast drifted run-to-run on the same data (near-threshold parties like KD
+    # are sensitive); 2000 calms the Monte-Carlo noise for a recompute-on-demand
+    # forecast. Costs a few extra minutes per fit.
     polls = pd.read_parquet(PROCESSED_DIR / "polls.parquet")
     results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
     data = prepare(polls, results)
@@ -303,14 +319,20 @@ def build(warmup: int = 600, samples: int = 600) -> None:
 
     posterior = fit(data, warmup=warmup, samples=samples)
     trend, election_alr_trend = summarize(posterior, data)
-    election = forecast_with_miss(election_alr_trend)
+
+    # Forecast horizon = weeks from the last poll to election day → horizon-
+    # dependent miss sigma (tighter as the election nears).
+    horizon = int(data.election_week - data.week.max())
+    sigma = miss_sigma_for_horizon(horizon)
+    print(f"horizon {horizon}w → miss sigma {sigma*100:.2f}pp")
+    election = forecast_with_miss(election_alr_trend, sigma_miss=sigma)
 
     trend.to_parquet(PROCESSED_DIR / "model_trend.parquet", index=False)
     np.savez(
         PROCESSED_DIR / "forecast_samples.npz",
         shares=election, election_alr_trend=election_alr_trend,
         parties=np.array(PARTY_ORDER), election_day=str(CYCLE_2026.election_day),
-        miss_sigma=MISS_SIGMA,
+        miss_sigma=sigma, horizon_weeks=horizon,
     )
     _report(trend, election, CYCLE_2026.election_day)
 

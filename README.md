@@ -45,6 +45,31 @@ government-formation as the headline output; correction for the persistent
 methodology break; and flagging *stödröstning* (vote-lending to keep small
 allies above 4%), which polls capture poorly.
 
+## Uncertainty model (and an honest limitation)
+
+The forecast's spread is a **calibrated, horizon-dependent add-on — not emergent
+from the Bayesian latent walk.** Swedish national vote shares move slowly between
+elections, so the random walk's innovation variance is estimated near zero; left
+alone it would project to election day with false certainty (the Taleb/martingale
+trap — ±0.1pp a year out). So the real election-day error is injected as an
+explicit **polling-miss term** in share space, then propagated through the simulator.
+
+- **Calibrated, not guessed** — sized by backtesting 2018 & 2022 from polls-only
+  so interval coverage matches realized poll-vs-result error (≈88%).
+- **Horizon-dependent** — calibrated at two horizons (election-eve and 14 weeks
+  out): `σ(H) = √(1.6² + 0.18·H) pp`, H = weeks from the last poll to election. The
+  forecast is wider far out and **tightens as the election nears** (`MISS_SIGMA_*`,
+  `miss_sigma_for_horizon` in `model.py`).
+- **Correlated within blocs** — a factor model gives within-bloc co-movement
+  (`MISS_RHO`≈0.2) so bloc-total / government-formation variance isn't understated.
+
+**The limitation, owned:** a hand-fit term carries the forecast error rather than
+the generative model itself. The principled fix — a backward-from-election-day
+random walk with horizon-accumulating innovations + an explicit election-day
+fundamentals prior (the Economist approach), so the spread *emerges* from the
+model — is on the roadmap. Until then the add-on is calibrated, horizon-aware, and
+transparent rather than hidden.
+
 ## Electoral system (encoded in `allocator.py`)
 
 - 349 seats = 310 fixed constituency seats + 39 leveling seats
@@ -107,10 +132,13 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       per-pollster house effects (centered), anchored at the 2022 result. Fits
       the cycle (~4 min on the laptop) → `model_trend.parquet` + election-day
       `forecast_samples.npz`. Election-day uncertainty is a **share-space**
-      polling-miss term (`MISS_SIGMA`), calibrated in Phase 5.
-      - [ ] Feed Phase-2 house effects / industry bias as priors; correlated
-            (cross-party) miss error; explicit election-day fundamentals prior;
-            horizon-dependent `MISS_SIGMA`.
+      polling-miss term — calibrated (Phase 5), **horizon-dependent**, and
+      **within-bloc correlated** (see "Uncertainty model").
+      - [ ] **Model-carried error** — make the spread emerge from the latent
+            (backward-from-election-day random walk with horizon-accumulating
+            innovations + explicit election-day fundamentals prior, Economist-style)
+            instead of the calibrated add-on. The deeper fix.
+      - [ ] Feed Phase-2 house effects / industry bias as priors.
 - [x] **Phase 4** — simulator (`simulate.py`): forecast draws → 4%/12% gate →
       allocator → seat distributions → bloc & government-formation probabilities,
       coalition table, threshold survival, kingmaker drama. Config-driven blocs
