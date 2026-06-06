@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Scheduled local recompute + publish for trefyranio.
+     Install:
+       cp ops/launchd-daily.plist.example ~/Library/LaunchAgents/online.trefyranio.daily.plist
+       launchctl load ~/Library/LaunchAgents/online.trefyranio.daily.plist
+     Logs: /tmp/trefyranio-daily.log -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>online.trefyranio.daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>/Users/peka/pelle-code/trefyranio/daily_update.sh >> /tmp/trefyranio-daily.log 2>&1</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>13</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/trefyranio-daily.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/trefyranio-daily.err</string>
+</dict>
+</plist>

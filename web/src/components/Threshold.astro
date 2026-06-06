@@ -1,0 +1,47 @@
+---
+import forecast from '../data/forecast.json';
+
+// Parties anywhere near the 4% cliff, most-endangered first.
+const bubble = forecast.parties
+  .filter((p) => p.code !== 'Övr' && (p.p_below_4pct ?? 0) > 0.02)
+  .sort((a, b) => b.p_below_4pct - a.p_below_4pct);
+const pct = (x) => Math.round(x * 100);
+---
+<section class="section">
+  <p class="section-label">Fyraprocentsspärren</p>
+  <h2>Är detta året ett parti åker ut?</h2>
+  <p class="lede">Ett parti under 4 % förlorar alla sina mandat. Sannolikheten att varje parti på vippen
+    hamnar under spärren — och försvinner ur riksdagen.</p>
+
+  <div class="gauges">
+    {bubble.map((p) => (
+      <div class="gauge">
+        <div class="g-head">
+          <span class="g-name" style={`color:${p.color}`}>{p.code}</span>
+          <span class="g-pct big-num">{pct(p.p_below_4pct)}<span class="g-cs">%</span></span>
+        </div>
+        <div class="g-track">
+          <div class="g-fill" style={`width:${p.p_below_4pct * 100}%;background:${p.color}`}></div>
+        </div>
+        <div class="g-sub muted">
+          risk att åka ut · snitt {(p.share_mean * 100).toFixed(1)} %
+          <span class="g-range">[{(p.share_lo * 100).toFixed(1)}–{(p.share_hi * 100).toFixed(1)}]</span>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <style>
+    .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 28px; }
+    .gauge { padding-top: 2px; }
+    .g-head { display: flex; align-items: baseline; justify-content: space-between; }
+    .g-name { font-weight: 900; font-size: 20px; }
+    .g-pct { font-size: 30px; }
+    .g-cs { font-size: 16px; font-weight: 800; margin-left: 1px; }
+    .g-track { height: 10px; background: var(--grid); border-radius: 5px; overflow: hidden; margin: 6px 0 5px; }
+    .g-fill { height: 100%; border-radius: 5px; }
+    .g-sub { font-size: 12.5px; }
+    .g-range { color: var(--faint); }
+    @media (max-width: 560px) { .gauges { grid-template-columns: 1fr; } }
+  </style>
+</section>

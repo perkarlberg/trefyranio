@@ -1,0 +1,228 @@
+---
+import trend from '../data/trend.json';
+import pollsData from '../data/polls.json';
+import forecast from '../data/forecast.json';
+
+const ORDER = ['S', 'M', 'SD', 'V', 'C', 'KD', 'MP', 'L'];
+const colors = Object.fromEntries(forecast.parties.map((p) => [p.code, p.color]));
+const names = Object.fromEntries(forecast.parties.map((p) => [p.code, p.name]));
+const recent = pollsData.polls.slice(-5).reverse();
+// Expected change: model nowcast (at the last poll) → election-day forecast.
+let lastIdx = trend.dates.findIndex((d) => d > forecast.updated);
+lastIdx = lastIdx < 0 ? trend.dates.length - 1 : lastIdx - 1;
+const change = ORDER.map((c) => ({
+  code: c, color: colors[c],
+  pp: (forecast.parties.find((p) => p.code === c).share_mean - trend.series[c].mean[lastIdx]) * 100,
+}));
+const cfg = {
+  dates: trend.dates,
+  series: Object.fromEntries(ORDER.map((c) => [c, trend.series[c].mean])),
+  polls: pollsData.polls,
+  pollsters: pollsData.pollsters,
+  lastPoll: forecast.updated,
+  election: forecast.election_day,
+  order: ORDER, colors, names,
+};
+---
+<section class="section">
+  <p class="section-label">Opinionstrend</p>
+  <h2>Hur vänder vinden?</h2>
+  <p class="lede">Modellens skattade stöd per parti. Heldraget fram till senaste mätningen, streckat är
+    prognosen till valdagen. Grå prickar är enskilda mätningar bakom trendlinjerna.</p>
+
+  <div class="toggle" role="tablist">
+    <button class="tg on" data-range="full">Sedan förra valet</button>
+    <button class="tg" data-range="half">Senaste halvåret</button>
+  </div>
+  <svg id="trendsvg" viewBox="0 0 880 380" role="img" aria-label="Opinionstrend per parti"></svg>
+
+  <h3 class="sub">Senaste mätningarna</h3>
+  <p class="tnote faint">Faktiskt resultat och husjusterat (efter att institutets systematiska lutning räknats bort).
+    Klicka på en rad för detaljer.</p>
+  <div class="tablewrap">
+    <table class="polltab">
+      <thead>
+        <tr>
+          <th class="l">Mätning</th>
+          {ORDER.map((c) => <th style={`color:${colors[c]}`}>{c}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {recent.map((p, i) => (
+          <tr class="prow" data-idx={pollsData.polls.length - 1 - i}>
+            <td class="l"><b>{p.pollster}</b><span class="rdate"> {p.date}</span></td>
+            {ORDER.map((c) => <td>{(p.raw[c] * 100).toFixed(1)}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <button class="he-open">Se hur olika institut systematiskt lutar åt olika håll →</button>
+
+  <h3 class="sub">Förväntad förändring fram till valdag</h3>
+  <p class="tnote faint">Opinionsmätningar och sammanvägningar släpar efter verkligheten — de underskattar ofta
+    ett parti som är på väg upp eller ner. Vår modell skattar inte bara var partierna ligger idag, utan
+    också åt vilket håll och hur snabbt de rör sig, och projicerar rörelsen fram till valdagen. Siffrorna
+    nedan är den förväntade förändringen i procentenheter från dagens läge till den 13 september.</p>
+  <div class="tablewrap">
+    <table class="polltab">
+      <thead><tr><th class="l">&nbsp;</th>{ORDER.map((c) => <th style={`color:${colors[c]}`}>{c}</th>)}</tr></thead>
+      <tbody>
+        <tr>
+          <td class="l"><b>Förändring</b></td>
+          {change.map((ch) => (
+            <td class={ch.pp >= 0 ? 'up' : 'down'}>{(ch.pp >= 0 ? '+' : '') + ch.pp.toFixed(1)}</td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="pollmodal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-x" aria-label="Stäng">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ cfg }}>
+    (function () {
+      const svg = document.getElementById('trendsvg');
+      const NS = 'http://www.w3.org/2000/svg';
+      const W = 880, H = 380, padL = 34, padR = 40, padT = 14, padB = 26;
+      const t = (d) => Date.parse(d);
+      const allDates = cfg.dates.map(t);
+      const lastPollT = t(cfg.lastPoll), elecT = t(cfg.election);
+      const maxV = Math.max(0.42, ...cfg.order.flatMap((c) => cfg.series[c].filter((v) => v != null)));
+      let range = 'full';
+
+      function domain() {
+        // "Senaste halvåret": 183 days before the latest poll → election day.
+        if (range === 'half') return [lastPollT - 183 * 864e5, elecT];
+        return [allDates[0], elecT];
+      }
+      function mk(tag, attrs) {
+        const e = document.createElementNS(NS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        return e;
+      }
+      function draw() {
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        const [d0, d1] = domain();
+        const x = (ms) => padL + ((ms - d0) / (d1 - d0)) * (W - padL - padR);
+        const y = (v) => padT + (1 - v / maxV) * (H - padT - padB);
+
+        [0, 0.1, 0.2, 0.3, 0.4].forEach((g) => {
+          svg.appendChild(mk('line', { x1: padL, y1: y(g), x2: W - padR, y2: y(g), stroke: '#ececec' }));
+          const lbl = mk('text', { x: padL - 6, y: y(g) + 4, 'text-anchor': 'end', class: 'ax' });
+          lbl.textContent = Math.round(g * 100); svg.appendChild(lbl);
+        });
+        const sparr = mk('line', { x1: padL, y1: y(0.04), x2: W - padR, y2: y(0.04), stroke: '#9aa0a6', 'stroke-dasharray': '4 3' });
+        svg.appendChild(sparr);
+        // x ticks
+        const span = d1 - d0, yr = 365 * 864e5;
+        const step = span > 1.5 * yr ? 'year' : 'month';
+        const seen = new Set();
+        cfg.dates.forEach((ds) => {
+          const ms = t(ds); if (ms < d0 || ms > d1) return;
+          const key = step === 'year' ? ds.slice(0, 4) : ds.slice(0, 7);
+          if (seen.has(key)) return; seen.add(key);
+          const tx = mk('text', { x: x(ms), y: H - 8, 'text-anchor': 'middle', class: 'ax' });
+          tx.textContent = step === 'year' ? ds.slice(0, 4) : ds.slice(5, 7) + '/' + ds.slice(2, 4);
+          svg.appendChild(tx);
+        });
+        // faint raw poll dots (behind)
+        cfg.polls.forEach((p) => {
+          const ms = t(p.date); if (ms < d0 || ms > d1) return;
+          cfg.order.forEach((c) => {
+            if (p.raw[c] == null) return;
+            svg.appendChild(mk('circle', { cx: x(ms), cy: y(p.raw[c]), r: 2, fill: '#777', opacity: 0.28 }));
+          });
+        });
+        // model lines: solid to last poll, dashed after
+        const splitMs = Math.min(lastPollT, d1);
+        cfg.order.forEach((c) => {
+          const pts = cfg.dates.map((ds, i) => ({ ms: t(ds), v: cfg.series[c][i] }))
+            .filter((o) => o.v != null && o.ms >= d0 && o.ms <= d1);
+          const path = (arr) => arr.map((o, i) => `${i ? 'L' : 'M'}${x(o.ms).toFixed(1)},${y(o.v).toFixed(1)}`).join(' ');
+          // Solid up to the last poll, dashed after — sharing the boundary point
+          // so the two segments connect (no gap before the last observation).
+          let si = pts.findIndex((o) => o.ms > splitMs);
+          if (si < 0) si = pts.length;
+          const solid = pts.slice(0, si);
+          const dash = pts.slice(Math.max(0, si - 1));
+          if (solid.length) svg.appendChild(mk('path', { d: path(solid), fill: 'none', stroke: cfg.colors[c], 'stroke-width': 2.2 }));
+          if (dash.length > 1) svg.appendChild(mk('path', { d: path(dash), fill: 'none', stroke: cfg.colors[c], 'stroke-width': 2.2, 'stroke-dasharray': '3 3', opacity: 0.85 }));
+          const last = pts[pts.length - 1];
+          if (last) { const lab = mk('text', { x: x(last.ms) + 4, y: y(last.v) + 4, class: 'plabel', fill: cfg.colors[c] }); lab.textContent = c; svg.appendChild(lab); }
+        });
+      }
+      document.querySelectorAll('.tg').forEach((b) => b.addEventListener('click', () => {
+        document.querySelectorAll('.tg').forEach((x) => x.classList.remove('on'));
+        b.classList.add('on'); range = b.dataset.range; draw();
+      }));
+      draw();
+
+      // poll modal
+      const modal = document.getElementById('pollmodal'), body = document.getElementById('modal-body');
+      function openModal(idx) {
+        const p = cfg.polls[idx], ps = cfg.pollsters[p.pollster] || {};
+        const rows = cfg.order.map((c) => {
+          const raw = (p.raw[c] * 100).toFixed(1), adj = (p.adjusted[c] * 100).toFixed(1);
+          const bias = ((ps.house_bias?.[c] ?? 0) * 100);
+          return `<tr><td style="color:${cfg.colors[c]};font-weight:800">${c}</td><td>${raw}</td><td>${adj}</td>
+            <td class="faint">${bias >= 0 ? '+' : ''}${bias.toFixed(1)}</td></tr>`;
+        }).join('');
+        body.innerHTML = `
+          <h4>${p.pollster} <span class="faint">· ${p.date}</span></h4>
+          <p class="mmeta">${p.method}${p.n ? ' · ' + p.n.toLocaleString('sv-SE') + ' svar' : ''}${
+            ps.tier ? ' · ' + ps.tier + (ps.mae_pp ? ' (snittfel ' + ps.mae_pp + ' pp)' : '')
+                    : (ps.note ? ' · ' + ps.note : '')}</p>
+          <table class="mtab"><thead><tr><th>Parti</th><th>Uppmätt</th><th>Justerat</th><th>Lutning</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+          <p class="faint mfoot">”Justerat” = uppmätt minus institutets historiska lutning (house effect) för partiet.</p>`;
+        modal.hidden = false;
+      }
+      document.querySelectorAll('.prow').forEach((r) => r.addEventListener('click', () => openModal(+r.dataset.idx)));
+      modal.addEventListener('click', (e) => { if (e.target === modal || e.target.classList.contains('modal-x')) modal.hidden = true; });
+    })();
+  </script>
+
+  <style>
+    .toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+    .tg { border: 1.5px solid var(--rule); background: #fff; color: var(--muted); border-radius: 999px;
+      padding: 5px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+    .tg.on { border-color: var(--ink); color: var(--ink); background: var(--card); }
+    #trendsvg { width: 100%; height: auto; display: block; }
+    :global(.ax) { font-size: 11px; fill: var(--muted); font-weight: 600; }
+    :global(.plabel) { font-size: 12px; font-weight: 800; }
+    .sub { font-size: 18px; font-weight: 800; margin: 26px 0 2px; }
+    .tnote { font-size: 12.5px; margin: 0 0 10px; }
+    .tablewrap { overflow-x: auto; }
+    .polltab { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .polltab th, .polltab td { padding: 8px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+    .polltab th.l, .polltab td.l { text-align: left; }
+    .polltab thead th { font-weight: 800; border-bottom: 2px solid var(--rule); }
+    .he-open { margin: 12px 0 4px; border: 1.5px solid var(--rule); background: #fff; color: var(--ink);
+      border-radius: 999px; padding: 8px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+    .he-open:hover { background: var(--card); }
+    .polltab td.up { color: #1b7a3d; font-weight: 700; }
+    .polltab td.down { color: #c0392b; font-weight: 700; }
+    .prow { cursor: pointer; border-bottom: 1px solid var(--grid); }
+    .prow:hover { background: var(--card); }
+    .rdate { color: var(--faint); font-weight: 600; font-size: 12px; }
+    .modal[hidden] { display: none; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center;
+      justify-content: center; padding: 20px; z-index: 50; }
+    .modal-card { background: #fff; border-radius: 14px; padding: 22px 24px; max-width: 460px; width: 100%; position: relative; }
+    .modal-x { position: absolute; top: 10px; right: 14px; border: 0; background: none; font-size: 24px; cursor: pointer; color: var(--muted); line-height: 1; }
+    .modal-card h4 { font-size: 18px; margin: 0 0 2px; }
+    .mmeta { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+    .mtab { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .mtab th, .mtab td { padding: 5px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+    .mtab th:first-child, .mtab td:first-child { text-align: left; }
+    .mtab thead th { font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--grid); font-size: 12px; }
+    .mfoot { font-size: 12px; margin: 12px 0 0; }
+  </style>
+</section>

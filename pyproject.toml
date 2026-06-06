@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trefyranio"
+version = "0.1.0"
+description = "FiveThirtyEight-style forecasting model for the Swedish Riksdag (trefyran.io)"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0",
+    "pyarrow>=14",
+    "requests>=2.28",
+    "lxml>=4.9",
+    "beautifulsoup4>=4.11",
+    "html5lib>=1.1",
+]
+
+[project.optional-dependencies]
+model = ["numpyro>=0.13", "jax>=0.4", "numpy>=1.24"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+trefyranio-build-polls = "trefyranio.etl.build_polls:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

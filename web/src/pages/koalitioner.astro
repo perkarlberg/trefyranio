@@ -1,0 +1,23 @@
+---
+import Base from '../layouts/Base.astro';
+import CoalitionBuilder from '../components/CoalitionBuilder.astro';
+const title = 'Möjliga regeringar 2026 – bygg en koalition | Trefyranio';
+const desc = 'Vilka koalitioner kan bilda regering efter riksdagsvalet 2026? Klicka ihop partier och se ' +
+  'chansen till egen majoritet (≥175 mandat) live ur tusentals simuleringar.';
+---
+<Base title={title} description={desc}>
+  <article class="section">
+    <p class="section-label">Riksdagsvalet 2026</p>
+    <h2>Möjliga regeringar</h2>
+    <p class="lede">Inget parti styr ensamt. Klicka ihop en tänkbar regeringskoalition nedan så räknas
+      dess chans till egen majoritet (minst 175 av 349 mandat) fram direkt — ur tusentals simuleringar
+      av valutgången. Vill du veta vem som troligast leder regeringen? Se
+      <a href="/vem-blir-statsminister">vem blir statsminister</a>.</p>
+  </article>
+  <CoalitionBuilder />
+  <article class="section">
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/fyraprocentssparren">Fyraprocentsspärren</a>
+      · <a href="/metod">Metod</a></p>
+    <style>.links { font-size: 14px; } .links a { color: var(--muted); }</style>
+  </article>
+</Base>

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Data — downloaded raw sources and built artifacts are reproducible, not committed
+data/raw/
+data/processed/
+
+# Web (Astro) — deps and build output. The web/src/data/*.json snapshot IS
+# committed (it's the same forecast served publicly) so the frontend builds
+# out-of-the-box; regenerate it with `python -m trefyranio.web_export`.
+web/node_modules/
+web/dist/
+web/.astro/
+web/preview.png
+
+# OS
+.DS_Store

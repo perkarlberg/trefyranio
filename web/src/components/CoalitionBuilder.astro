@@ -1,0 +1,107 @@
+---
+import seatData from '../data/seat_draws.json';
+import forecast from '../data/forecast.json';
+const { parties, colors, majority, draws } = seatData;
+const nameOf = Object.fromEntries(forecast.parties.map((p) => [p.code, p.name]));
+// Pre-select the current governing constellation (Tidö).
+const preset = forecast.government.blocs.right;
+---
+<section class="section">
+  <p class="section-label">Koalitioner</p>
+  <h2>Vilka kan bilda regering?</h2>
+  <p class="lede">Inget parti styr ensamt. Klicka ihop en koalition så räknas dess chans till egen
+    majoritet (≥175 mandat) fram direkt ur {draws.length.toLocaleString('sv-SE')} simuleringar.</p>
+
+  <div class="chips">
+    {parties.map((code) => (
+      <button class="chip" data-code={code} aria-pressed={preset.includes(code) ? 'true' : 'false'}
+        style={`--c:${colors[code]}`}>
+        <span class="dot"></span>{code}
+      </button>
+    ))}
+  </div>
+
+  <div class="cb-result">
+    <div class="cb-prob">
+      <div class="big-num" id="cb-pct">–</div>
+      <div class="cb-lbl muted">chans till egen majoritet</div>
+    </div>
+    <div class="cb-detail">
+      <div class="cb-bar"><div class="cb-fill" id="cb-fill"></div><div class="cb-maj" title="175 = majoritet"></div></div>
+      <div class="cb-seats muted"><span id="cb-mean">–</span> mandat i snitt <span class="faint">[<span id="cb-lo">–</span>–<span id="cb-hi">–</span>]</span> · majoritet vid {majority}</div>
+      <div class="cb-pick faint" id="cb-pick"></div>
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ parties, colors, majority, draws, preset, nameOf }}>
+    (function () {
+      const sel = new Set(preset);
+      const $ = (id) => document.getElementById(id);
+      const chips = Array.from(document.querySelectorAll('.chip'));
+      const maxSeats = 250; // bar scale
+
+      function quantile(sorted, q) {
+        const i = (sorted.length - 1) * q;
+        const lo = Math.floor(i), hi = Math.ceil(i);
+        return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+      }
+
+      function recompute() {
+        const idx = parties.map((c, i) => (sel.has(c) ? i : -1)).filter((i) => i >= 0);
+        if (!idx.length) {
+          $('cb-pct').textContent = '–'; $('cb-mean').textContent = '–';
+          $('cb-lo').textContent = '–'; $('cb-hi').textContent = '–';
+          $('cb-fill').style.width = '0%'; $('cb-pick').textContent = 'Välj minst ett parti.';
+          return;
+        }
+        const sums = draws.map((row) => idx.reduce((s, i) => s + row[i], 0));
+        const wins = sums.filter((s) => s >= majority).length;
+        const p = wins / sums.length;
+        const mean = sums.reduce((a, b) => a + b, 0) / sums.length;
+        const sorted = sums.slice().sort((a, b) => a - b);
+        $('cb-pct').textContent = Math.round(p * 100) + '%';
+        $('cb-pct').style.color = p >= 0.5 ? '#1b7a3d' : 'var(--ink)';
+        $('cb-mean').textContent = mean.toFixed(0);
+        $('cb-lo').textContent = Math.round(quantile(sorted, 0.1));
+        $('cb-hi').textContent = Math.round(quantile(sorted, 0.9));
+        $('cb-fill').style.width = Math.min(100, (mean / maxSeats) * 100) + '%';
+        $('cb-pick').textContent = parties.filter((c) => sel.has(c))
+          .map((c) => nameOf[c] || c).join(' + ');
+      }
+
+      chips.forEach((btn) => {
+        const code = btn.dataset.code;
+        if (sel.has(code)) btn.classList.add('on');
+        btn.addEventListener('click', () => {
+          if (sel.has(code)) { sel.delete(code); btn.classList.remove('on'); btn.setAttribute('aria-pressed', 'false'); }
+          else { sel.add(code); btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); }
+          recompute();
+        });
+      });
+      // place the 175 marker on the bar
+      document.querySelector('.cb-maj').style.left = ((majority / maxSeats) * 100) + '%';
+      recompute();
+    })();
+  </script>
+
+  <style>
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--rule);
+      background: #fff; color: var(--muted); border-radius: 999px; padding: 6px 13px;
+      font-weight: 800; font-size: 14px; cursor: pointer; transition: all .12s; }
+    .chip .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); opacity: .35; }
+    .chip.on { border-color: var(--c); color: var(--ink); background: color-mix(in srgb, var(--c) 9%, #fff); }
+    .chip.on .dot { opacity: 1; }
+    .cb-result { display: grid; grid-template-columns: 150px 1fr; gap: 22px; align-items: center;
+      background: var(--card); border: 1px solid var(--grid); border-radius: 12px; padding: 18px 20px; }
+    .cb-prob { text-align: center; }
+    #cb-pct { font-size: 50px; line-height: 1; }
+    .cb-lbl { font-size: 12px; margin-top: 2px; }
+    .cb-bar { position: relative; height: 16px; background: var(--grid); border-radius: 8px; overflow: visible; }
+    .cb-fill { height: 100%; background: var(--bloc-right); border-radius: 8px; transition: width .18s; }
+    .cb-maj { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+    .cb-seats { font-size: 13px; margin-top: 9px; }
+    .cb-pick { font-size: 12.5px; margin-top: 5px; }
+    @media (max-width: 560px) { .cb-result { grid-template-columns: 1fr; text-align: center; } }
+  </style>
+</section>

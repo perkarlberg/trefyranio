@@ -1,0 +1,49 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Metod – så bygger vi valprognosen | Trefyranio" description="Bayesiansk sammanvägning av opinionsmätningar och tusentals Monte Carlo-simuleringar. Så modellerar vi mandat, regeringsbildning och fyraprocentsspärren – öppet och transparent.">
+  <article class="method section">
+    <p class="section-label">Om modellen</p>
+    <h2>Så fungerar Trefyranio</h2>
+    <p class="lede">En statistisk prognos för riksdagsvalet 2026, inspirerad av FiveThirtyEight men
+      byggd för det svenska valsystemet.</p>
+
+    <h3>Opinionsmätningar vägs samman</h3>
+    <p>Alla publicerade väljarbarometrar (Novus, Verian/Sifo, Demoskop, Ipsos, Indikator, Sentio,
+      SCB:s PSU m.fl.) samlas in. En dynamisk bayesiansk modell skattar varje partis stöd över tid.
+      Till skillnad från ett rullande snitt skattar modellen även <em>rörelsen</em> — om ett parti är
+      på väg upp eller ner — och projicerar den fram till valdagen. Det rättar till den tröghet som gör
+      att vanliga snitt konsekvent underskattar ett parti i medvind.</p>
+
+    <h3>Varje mätinstitut kalibreras</h3>
+    <p>Institut väger olika tungt utifrån historisk träffsäkerhet, och varje instituts systematiska
+      lutning (”house effect”) skattas och justeras bort.</p>
+
+    <h3>Från röster till mandat</h3>
+    <p>Tiotusentals simuleringar dras ur modellen. Varje simulering körs genom det riktiga valsystemet:
+      4-procentsspärren (eller 12 % i en valkrets), jämkade uddatalsmetoden med första deltal 1,2, samt
+      utjämningsmandaten. Resultatet blir en fördelning över mandat — inte en enda gissning. Det är därför
+      partier nära 4 % får ett <em>tudelat</em> utfall: antingen in i riksdagen, eller helt utslagna.</p>
+
+    <h3>Osäkerheten är kalibrerad</h3>
+    <p>Prognosens osäkerhet är kalibrerad mot hur fel mätningarna faktiskt låg före valen 2018 och 2022,
+      mätt på samma avstånd till valet som idag. Modellen är medvetet ödmjuk: ett försprång i juni är
+      inte detsamma som en seger i september.</p>
+
+    <h3>Regering och koalitioner</h3>
+    <p>Ur mandatsimuleringarna räknas sannolikheten för olika regeringsutfall och för att varje tänkbar
+      koalition når egen majoritet (175 mandat). Vem som <em>faktiskt</em> bildar regering avgörs av
+      förhandlingar som ingen modell kan förutsäga — särskilt Centerns vägval — så vi visar mandatmatematiken
+      och låter det politiska valet vara öppet.</p>
+
+    <h3>Källor</h3>
+    <p class="muted">Valresultat: Valmyndigheten och SCB. Opinionsmätningar: SwedishPolls (CC0) samt SCB.
+      Partifärger enligt svensk konvention. Detta är en prognos byggd på offentliga data — inte en
+      förutsägelse, och inte knuten till något parti.</p>
+
+    <style>
+      .method h3 { font-size: 18px; font-weight: 800; margin: 24px 0 4px; }
+      .method p { max-width: 64ch; margin: 0 0 4px; }
+    </style>
+  </article>
+</Base>

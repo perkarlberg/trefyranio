@@ -1,0 +1,96 @@
+---
+import forecast from '../data/forecast.json';
+
+// Central parliament: the coherent allocation of the mean forecast shares
+// (computed server-side with the real 4% gate). A party below 4% gets 0 here —
+// no misleading averaged-seat counts for bimodal near-threshold parties.
+const TOTAL = 349;
+const byCode = Object.fromEntries(forecast.parties.map((p) => [p.code, p]));
+const seatsByCode = Object.fromEntries(
+  forecast.parties.filter((p) => p.code !== 'Övr' && (p.central_seats ?? 0) > 0)
+    .map((p) => [p.code, p.central_seats]),
+);
+// Parties polling meaningfully but knocked out by the 4% gate in this scenario.
+const eliminated = forecast.parties
+  .filter((p) => p.code !== 'Övr' && (p.central_seats ?? 0) === 0 && (p.share_mean ?? 0) >= 0.01)
+  .map((p) => p.code);
+
+// Left→right political spectrum for the arc.
+const SPECTRUM = ['V', 'S', 'MP', 'C', 'L', 'KD', 'M', 'SD'];
+const order = SPECTRUM.filter((c) => seatsByCode[c] > 0);
+
+// Parliament-arc geometry: dots across concentric rows in a semicircle.
+const W = 880, ROWS = 13, rOuter = 410, rInner = 200;
+const cx = W / 2, cy = rOuter + 18, dot = 7;
+const radii = Array.from({ length: ROWS }, (_, i) => rInner + (rOuter - rInner) * i / (ROWS - 1));
+const weight = radii.reduce((a, b) => a + b, 0);
+let perRow = radii.map((r) => Math.max(1, Math.round(TOTAL * r / weight)));
+let d = TOTAL - perRow.reduce((a, b) => a + b, 0);
+for (let i = 0; d !== 0; i = (i + 1) % ROWS) { perRow[i] += Math.sign(d); d -= Math.sign(d); }
+
+// All seat positions, sorted into the arc reading order (left→right wedges).
+let pts = [];
+radii.forEach((r, i) => {
+  const n = perRow[i];
+  for (let j = 0; j < n; j++) {
+    const t = n === 1 ? 0.5 : j / (n - 1);
+    const ang = Math.PI * (1 - t);            // π = left, 0 = right
+    pts.push({ ang, r, x: cx + r * Math.cos(ang), y: cy - r * Math.sin(ang) });
+  }
+});
+pts.sort((a, b) => (b.ang - a.ang) || (a.r - b.r));
+
+// Assign colours by spectrum order.
+const seq = [];
+for (const code of order) for (let k = 0; k < seatsByCode[code]; k++) seq.push(code);
+const seats = pts.slice(0, seq.length).map((pt, i) => ({ ...pt, code: seq[i], color: byCode[seq[i]].color }));
+
+// Bloc totals.
+const blocSeats = (codes) => codes.reduce((s, c) => s + (seatsByCode[c] || 0), 0);
+const right = blocSeats(forecast.government.blocs.right);
+const left = blocSeats(forecast.government.blocs.left);
+const centre = blocSeats(forecast.government.blocs.centre);
+const TOP = 40;          // headroom above the arc so the "175" label isn't clipped
+const vh = cy + 30;
+---
+<section class="section">
+  <p class="section-label">Mandatfördelning</p>
+  <h2>349 mandat i riksdagen</h2>
+  <p class="lede">Förväntad fördelning. Spärren vid 4 % och utjämningsmandaten är inräknade. Majoritet kräver 175.</p>
+
+  <svg class="hemi" viewBox={`0 ${-TOP} ${W} ${vh + TOP}`} role="img" aria-label="Mandatfördelning i riksdagen">
+    {seats.map((s) => (
+      <circle cx={s.x} cy={s.y} r={dot} fill={s.color} />
+    ))}
+    <!-- majority marker at the top centre -->
+    <text x={cx} y={-22} text-anchor="middle" class="maj">175 för majoritet</text>
+    <line x1={cx} y1={-12} x2={cx} y2={10} stroke="var(--ink)" stroke-width="2" />
+  </svg>
+
+  <div class="blocs">
+    <div class="bloc"><span class="bn big-num" style="color:var(--bloc-left)">{left}</span><span class="bl">Rödgrönt (S, V, MP)</span></div>
+    <div class="bloc"><span class="bn big-num" style="color:var(--bloc-centre)">{centre}</span><span class="bl">Centern</span></div>
+    <div class="bloc"><span class="bn big-num" style="color:var(--bloc-right)">{right}</span><span class="bl">Tidö (M, KD, L, SD)</span></div>
+  </div>
+
+  <div class="legend">
+    {order.map((c) => (
+      <span class="lg"><span class="sw" style={`background:${byCode[c].color}`}></span>{c} {seatsByCode[c]}</span>
+    ))}
+  </div>
+  {eliminated.length > 0 && (
+    <p class="elim faint">{eliminated.join(', ')} hamnar under 4 % i detta huvudscenario och får 0 mandat.</p>
+  )}
+
+  <style>
+    .elim { text-align: center; font-size: 12.5px; margin: 10px 0 0; }
+    .hemi { width: 100%; height: auto; display: block; margin: 8px 0 4px; }
+    .maj { font-size: 15px; font-weight: 700; fill: var(--ink); }
+    .blocs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 18px; text-align: center; }
+    .bn { display: block; font-size: 34px; line-height: 1; }
+    .bl { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+    .lg { font-size: 13px; font-weight: 700; color: var(--ink); display: inline-flex; align-items: center; gap: 5px; }
+    .sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  </style>
+</section>

@@ -1,0 +1,35 @@
+---
+import Base from '../layouts/Base.astro';
+const title = 'Ordlista – valprognos och opinionsmätningar | Trefyranio';
+const desc = 'Förklaringar av begreppen bakom valprognosen: mandat, utjämningsmandat, jämkade ' +
+  'uddatalsmetoden, fyraprocentsspärren, husbias, sammanvägning och simulering.';
+const terms = [
+  ['Mandat', 'En plats i riksdagen. Riksdagen har 349 mandat; 175 krävs för egen majoritet.'],
+  ['Fyraprocentsspärren', 'Ett parti måste få minst 4 % av rösterna i hela landet (eller 12 % i en valkrets) för att få några mandat alls. Under spärren = noll mandat.'],
+  ['Utjämningsmandat', '39 av de 349 mandaten fördelas sist, nationellt, så att riksdagen blir proportionell mot rösterna i hela landet — inte bara valkrets för valkrets.'],
+  ['Jämkade uddatalsmetoden', 'Metoden som omvandlar röster till mandat. Sedan 2018 med första deltal 1,2, därefter 3, 5, 7 … Den missgynnar minst de minsta partierna jämfört med rena uddatal.'],
+  ['Sammanvägning (poll of polls)', 'Att väga ihop många opinionsmätningar till en samlad skattning, i stället för att lita på en enskild mätning.'],
+  ['Husbias (house effect)', 'Ett mätinstituts systematiska lutning — att det konsekvent ligger något högt eller lågt för ett visst parti jämfört med snittet. Vi skattar och justerar bort den.'],
+  ['Simulering (Monte Carlo)', 'Vi drar tusentals tänkbara valutgångar ur modellen och kör varje genom det riktiga valsystemet. Andelen utfall där något händer blir sannolikheten för det.'],
+  ['Block', 'Partier som samarbetar om regeringsmakten. 2026: Tidö (M, KD, L, SD) och rödgrönt (S, V, MP), med Centern som vågmästare.'],
+  ['Vågmästare', 'Ett parti vars stöd avgör vilken sida som når majoritet, utan att självt tillhöra något block.'],
+  ['Negativ parlamentarism', 'En regering kan tillträda så länge inte en absolut majoritet (175) röstar emot. Därför kan en minoritetsregering styra.'],
+];
+---
+<Base title={title} description={desc}>
+  <article class="section ordlista">
+    <p class="section-label">Riksdagsvalet 2026</p>
+    <h2>Ordlista</h2>
+    <p class="lede">Begreppen bakom valprognosen, kort förklarade.</p>
+    <dl>
+      {terms.map(([t, d]) => (<Fragment><dt>{t}</dt><dd>{d}</dd></Fragment>))}
+    </dl>
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/metod">Metod</a></p>
+    <style>
+      .ordlista dl { max-width: 64ch; }
+      .ordlista dt { font-weight: 800; font-size: 16px; margin-top: 16px; }
+      .ordlista dd { margin: 4px 0 0; color: var(--ink); }
+      .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
+    </style>
+  </article>
+</Base>

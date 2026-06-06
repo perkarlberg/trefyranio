@@ -1,0 +1,82 @@
+---
+import pollsData from '../data/polls.json';
+import forecast from '../data/forecast.json';
+
+const ORDER = ['S', 'M', 'SD', 'V', 'C', 'KD', 'MP', 'L'];
+const colors = Object.fromEntries(forecast.parties.map((p) => [p.code, p.color]));
+const houses = Object.keys(pollsData.pollsters).sort();
+const HPAL = ['#264653', '#2a9d8f', '#e9c46a', '#f4a261', '#e76f51', '#8d99ae', '#9c6644', '#b5838d', '#577590', '#bc6c25'];
+const houseColor = Object.fromEntries(houses.map((h, i) => [h, HPAL[i % HPAL.length]]));
+
+const bias = (h, p) => (pollsData.pollsters[h].house_bias?.[p] ?? 0) * 100;
+const maxAbs = Math.max(1, ...houses.flatMap((h) => ORDER.map((p) => Math.abs(bias(h, p)))));
+
+// Wide chart with generous separation: the bar cluster uses ~64% of each group's
+// width (centred), and bars are 30% narrower than the naive fit → clear gaps.
+const W = 980, H = 380, padT = 14, padB = 34, padL = 34, padR = 14;
+const groupW = (W - padL - padR) / ORDER.length;
+const barW = (groupW * 0.64 / houses.length) * 0.7;
+const clusterW = barW * houses.length;
+const groupStart = (gi) => padL + gi * groupW + (groupW - clusterW) / 2;
+const y0 = padT + (H - padT - padB) / 2;
+const y = (v) => y0 - (v / maxAbs) * ((H - padT - padB) / 2);
+---
+<div id="hemodal" class="modal" hidden>
+  <div class="modal-card wide">
+    <button class="modal-x" aria-label="Stäng">×</button>
+    <h4>House effects</h4>
+    <p class="he-intro">Olika institut lutar systematiskt åt olika håll — ett institut kan konsekvent ge
+      ett parti någon procentenhet mer eller mindre än snittet. Det betyder sällan att de gör fel med
+      flit; det beror oftast på metod (panel, viktning, hur osäkra väljare hanteras). Modellen mäter
+      varje instituts lutning och räknar bort den innan mätningarna vägs samman.</p>
+    <div class="legend">
+      {houses.map((h) => (
+        <span class="lg"><span class="sw" style={`background:${houseColor[h]}`}></span>{h}</span>
+      ))}
+    </div>
+    <svg viewBox={`0 0 ${W} ${H}`} class="hechart" role="img" aria-label="House effects per parti">
+      {[-maxAbs, 0, maxAbs].map((g) => (
+        <g><line x1={padL} y1={y(g)} x2={W - padR} y2={y(g)} stroke={g === 0 ? 'var(--rule)' : 'var(--grid)'} />
+          <text x={padL - 6} y={y(g) + 3} text-anchor="end" class="hax">{g > 0 ? '+' : ''}{g.toFixed(1)}</text></g>
+      ))}
+      {ORDER.map((p, gi) => (
+        <g>
+          {houses.map((h, hi) => {
+            const v = bias(h, p);
+            const x = groupStart(gi) + hi * barW;
+            return <rect x={x} y={v >= 0 ? y(v) : y0} width={Math.max(2, barW - 1.2)} height={Math.abs(y(v) - y0)} fill={houseColor[h]} rx="0.5" />;
+          })}
+          <text x={padL + gi * groupW + groupW / 2} y={H - 12} text-anchor="middle" class="hpl" fill={colors[p]}>{p}</text>
+        </g>
+      ))}
+    </svg>
+    <p class="faint hf">Positiv stapel = institutet ger partiet mer än snittet; negativ = mindre.
+      Skattat ur historiska mätningar mot faktiska valresultat.</p>
+  </div>
+</div>
+
+<script is:inline>
+  (function () {
+    const m = document.getElementById('hemodal');
+    if (!m) return;
+    document.querySelectorAll('.he-open').forEach((b) => b.addEventListener('click', () => { m.hidden = false; }));
+    m.addEventListener('click', (e) => { if (e.target === m || e.target.classList.contains('modal-x')) m.hidden = true; });
+  })();
+</script>
+
+<style>
+  .modal[hidden] { display: none; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center;
+    justify-content: center; padding: 20px; z-index: 50; }
+  .modal-card.wide { background: #fff; border-radius: 14px; padding: 22px 24px; max-width: 920px; width: 100%;
+    position: relative; max-height: 90vh; overflow-y: auto; }
+  .modal-x { position: absolute; top: 10px; right: 14px; border: 0; background: none; font-size: 24px; cursor: pointer; color: var(--muted); }
+  .modal-card h4 { font-size: 19px; margin: 0 0 8px; }
+  .he-intro { font-size: 13.5px; color: var(--muted); max-width: 70ch; margin: 0 0 14px; }
+  .hechart { width: 100%; height: auto; display: block; }
+  .hax { font-size: 10px; fill: var(--muted); } .hpl { font-size: 14px; font-weight: 800; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+  .lg { font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; }
+  .hf { font-size: 12px; margin: 10px 0 0; }
+</style>

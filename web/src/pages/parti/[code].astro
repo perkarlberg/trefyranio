@@ -1,0 +1,92 @@
+---
+import Base from '../../layouts/Base.astro';
+import forecast from '../../data/forecast.json';
+import trend from '../../data/trend.json';
+
+export function getStaticPaths() {
+  return ['S', 'M', 'SD', 'V', 'C', 'KD', 'MP', 'L'].map((code) => ({ params: { code: code.toLowerCase() } }));
+}
+
+const code = Astro.params.code.toUpperCase();
+const p = forecast.parties.find((x) => x.code === code);
+const series = trend.series[code];
+
+// momentum: model nowcast (at last poll) → election-day forecast
+let lastIdx = trend.dates.findIndex((d) => d > forecast.updated);
+lastIdx = lastIdx < 0 ? trend.dates.length - 1 : lastIdx - 1;
+const now = series.mean[lastIdx];
+const changePp = (p.share_mean - now) * 100;
+const pct = (x) => (x * 100).toFixed(1);
+const pBelow = Math.round(p.p_below_4pct * 100);
+
+// sparkline over the full series
+const vals = series.mean;
+const W = 320, Hh = 70, mx = Math.max(0.05, ...vals);
+const sx = (i) => (i / (vals.length - 1)) * W;
+const sy = (v) => Hh - (v / mx) * (Hh - 6) - 3;
+const dPath = vals.map((v, i) => `${i ? 'L' : 'M'}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`).join(' ');
+
+// Conditional copy computed here (frontmatter JS) — keeps "<"/">" out of the
+// template, which Astro's JSX parser would mis-read as tags.
+const skNote = (code === 'L' || pBelow > 30)
+  ? 'Partiet ligger nära spärren — ett utfall under 4 % nollställer alla mandat.'
+  : 'Stödet ligger över spärren i de flesta simuleringar.';
+const meaningIntro = `I ${forecast.counts.sims.toLocaleString('sv-SE')} simuleringar landar ${p.name} i snitt på ${pct(p.share_mean)} % av rösterna.`;
+const survivalText = pBelow >= 5
+  ? `I ${pBelow} % av simuleringarna hamnar partiet under fyraprocentsspärren och förlorar då samtliga mandat.`
+  : ' Partiet klarar fyraprocentsspärren i så gott som alla simuleringar.';
+const momentumText = changePp >= 0.3
+  ? ` Modellen ser ett uppåttryck på ${changePp.toFixed(1)} procentenheter fram till valdagen.`
+  : changePp <= -0.3
+    ? ` Modellen ser ett nedåttryck på ${Math.abs(changePp).toFixed(1)} procentenheter fram till valdagen.`
+    : ' Stödet väntas ligga relativt stilla fram till valdagen.';
+
+const title = `${p.name} i valprognosen 2026 – stöd, mandat och chans | Trefyranio`;
+const desc = `Prognos för ${p.name} (${code}) i riksdagsvalet 2026: opinionsstöd ${pct(p.share_mean)} %, ` +
+  `förväntade mandat och sannolikheten att klara fyraprocentsspärren.`;
+---
+<Base title={title} description={desc}>
+  <article class="section party">
+    <p class="section-label">Parti · Riksdagsvalet 2026</p>
+    <h2><span class="dot" style={`background:${p.color}`}></span>{p.name} ({code})</h2>
+    <p class="lede">Trefyranios prognos för {p.name} i riksdagsvalet den 13 september 2026 — uppdaterad
+      vid varje ny opinionsmätning.</p>
+
+    <div class="kpis">
+      <div class="kpi"><div class="kn big-num" style={`color:${p.color}`}>{pct(p.share_mean)}<span>%</span></div>
+        <div class="kl">väljarstöd (10–90 %: {pct(p.share_lo)}–{pct(p.share_hi)})</div></div>
+      <div class="kpi"><div class="kn big-num">{p.central_seats}</div>
+        <div class="kl">mandat i huvudscenariot ({p.seats_lo}–{p.seats_hi})</div></div>
+      <div class="kpi"><div class="kn big-num">{changePp >= 0 ? '+' : ''}{changePp.toFixed(1)}</div>
+        <div class="kl">förväntad förändring till valdagen (pp)</div></div>
+      <div class="kpi"><div class="kn big-num">{pBelow}<span>%</span></div>
+        <div class="kl">risk att hamna under 4 %</div></div>
+    </div>
+
+    <h3>Opinionstrend sedan valet 2022</h3>
+    <svg class="spark" viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="none" aria-label={`Trend för ${code}`}>
+      <line x1="0" y1={sy(0.04)} x2={W} y2={sy(0.04)} stroke="var(--faint)" stroke-dasharray="3 3" />
+      <path d={dPath} fill="none" stroke={p.color} stroke-width="2" />
+    </svg>
+    <p class="faint sk">Streckad linje = fyraprocentsspärren. {skNote}</p>
+
+    <h3>Vad betyder det?</h3>
+    <p>{meaningIntro} {survivalText}{momentumText}</p>
+
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/fyraprocentssparren">Fyraprocentsspärren</a>
+      · <a href="/vem-blir-statsminister">Vem blir statsminister?</a> · <a href="/metod">Metod</a></p>
+
+    <style>
+      .party h2 { display: flex; align-items: center; gap: 10px; }
+      .party h2 .dot { width: 18px; height: 18px; border-radius: 50%; }
+      .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 10px 0 24px; }
+      .kn { font-size: 38px; line-height: 1; } .kn span { font-size: 18px; font-weight: 800; }
+      .kl { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+      .spark { width: 100%; max-width: 420px; height: 90px; display: block; }
+      .sk { font-size: 12.5px; margin: 4px 0 0; }
+      .party h3 { font-size: 18px; font-weight: 800; margin: 22px 0 4px; }
+      .party p { max-width: 64ch; }
+      .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
+    </style>
+  </article>
+</Base>

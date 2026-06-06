@@ -1,0 +1,75 @@
+---
+import Base from '../layouts/Base.astro';
+import forecast from '../data/forecast.json';
+
+const g = forecast.government;
+const pct = (x) => Math.round(x * 100);
+const outcomes = [
+  { p: g.left, label: `Rödgrönt styre`, pm: `statsminister ${g.leaders.S}`, cls: 'left' },
+  { p: g.kingmaker, label: 'Centern blir vågmästare', pm: 'inget block når 175 mandat', cls: 'centre' },
+  { p: g.right, label: 'Fortsatt Tidöstyre', pm: `statsminister ${g.leaders.M}`, cls: 'right' },
+].sort((a, b) => b.p - a.p);
+const coalitions = [...forecast.coalitions].sort((a, b) => b.p_majority - a.p_majority);
+const title = 'Vem blir statsminister 2026? Sannolikheter | Trefyranio';
+const desc = 'Sannolikheten för vem som leder Sveriges regering efter riksdagsvalet 2026 – Tidö eller ' +
+  'rödgrönt, och Centerns vågmästarroll. Beräknat ur tusentals simuleringar.';
+---
+<Base title={title} description={desc}>
+  <article class="section sm">
+    <p class="section-label">Riksdagsvalet 2026</p>
+    <h2>Vem blir statsminister?</h2>
+    <p class="lede">Inget parti är i närheten av egen majoritet. Vem som kan bilda regering avgörs av
+      blockmatematiken — och av Centerns vägval. Sannolikheterna nedan kommer ur
+      {' '}{forecast.counts.sims.toLocaleString('sv-SE')} simuleringar av valutgången.</p>
+
+    <div class="cards">
+      {outcomes.map((o) => (
+        <div class={`card ${o.cls}`}>
+          <div class="big-num cn">{pct(o.p)}<span>%</span></div>
+          <div class="cl">{o.label}</div>
+          <div class="cs muted">{o.pm}</div>
+        </div>
+      ))}
+    </div>
+
+    <h3>Så funkar regeringsbildningen</h3>
+    <p>Sverige har <b>negativ parlamentarism</b>: en statsminister kan tillträda så länge inte en absolut
+      majoritet (175 mandat) röstar emot. I praktiken styr därför det block som är störst — om motblocket
+      inte når 175. Eftersom 349 är ett udda tal når nästan alltid endera sidan ett övertag, men
+      <b> Centern</b> står utanför båda blocken: partiet vägrar regera med SD och är samtidigt skeptiskt
+      till V. Därför blir Centern ofta vågmästare, och deras besked avgör vilken sida som når majoritet.</p>
+
+    <h3>Möjliga regeringars chans till egen majoritet (≥175)</h3>
+    <table class="ctab">
+      <thead><tr><th class="l">Koalition</th><th>Chans</th><th>Mandat (10–90 %)</th></tr></thead>
+      <tbody>
+        {coalitions.map((c) => (
+          <tr><td class="l">{c.name}</td><td><b>{pct(c.p_majority)}%</b></td>
+            <td class="muted">{c.mean_seats.toFixed(0)} [{c.lo}–{c.hi}]</td></tr>
+        ))}
+      </tbody>
+    </table>
+    <p class="faint">Att en koalition når 175 mandat betyder inte att den faktiskt bildas — det avgörs av
+      förhandlingar som ingen modell kan förutsäga. Vi visar mandatmatematiken.</p>
+
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/koalitioner">Bygg en koalition</a>
+      · <a href="/fyraprocentssparren">Fyraprocentsspärren</a> · <a href="/metod">Metod</a></p>
+
+    <style>
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0 8px; }
+      .card { text-align: center; padding: 16px 8px; border-top: 3px solid; }
+      .card.left { border-color: var(--bloc-left); } .card.left .cn { color: var(--bloc-left); }
+      .card.centre { border-color: var(--bloc-centre); } .card.centre .cn { color: var(--bloc-centre); }
+      .card.right { border-color: var(--bloc-right); } .card.right .cn { color: var(--bloc-right); }
+      .cn { font-size: 46px; line-height: 1; } .cn span { font-size: 22px; font-weight: 800; }
+      .cl { font-weight: 800; font-size: 16px; margin-top: 6px; } .cs { font-size: 13px; }
+      .sm h3 { font-size: 18px; font-weight: 800; margin: 24px 0 6px; } .sm p { max-width: 64ch; }
+      .ctab { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .ctab th, .ctab td { padding: 8px 6px; text-align: right; }
+      .ctab th.l, .ctab td.l { text-align: left; }
+      .ctab thead th { border-bottom: 2px solid var(--rule); font-weight: 800; }
+      .ctab tbody tr { border-bottom: 1px solid var(--grid); }
+      .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
+    </style>
+  </article>
+</Base>

@@ -1,0 +1,69 @@
+---
+import forecast from '../data/forecast.json';
+const g = forecast.government;
+const pct = (x) => Math.round(x * 100);
+// Three mutually-exclusive government outcomes, ordered as a left→right spectrum.
+const cols = [
+  { key: 'left',      label: 'Rödgrönt styre',  sub: `statsminister ${g.leaders.S}`, p: g.left,      cls: 'left' },
+  { key: 'kingmaker', label: 'Centern avgör',   sub: 'inget block når 175',           p: g.kingmaker, cls: 'centre' },
+  { key: 'right',     label: 'Tidöstyre',       sub: `statsminister ${g.leaders.M}`,  p: g.right,     cls: 'right' },
+];
+---
+<section class="hero">
+  <p class="kicker">Riksdagsvalet 2026 · {forecast.weeks_to_go} veckor kvar</p>
+  <h1>Vem styr Sverige?</h1>
+
+  <div class="bar" role="img" aria-label="Sannolikhet för regeringsutfall">
+    {cols.map((c) => (
+      <div class={`seg ${c.cls}`} style={`width:${c.p * 100}%`}></div>
+    ))}
+  </div>
+
+  <div class="cols">
+    {cols.map((c) => (
+      <div class={`col ${c.cls}`}>
+        <div class="big-num pnum">{pct(c.p)}<span class="pcs">%</span></div>
+        <div class="lbl">{c.label}</div>
+        <div class="sub muted">{c.sub}</div>
+      </div>
+    ))}
+  </div>
+
+  <p class="note faint">
+    Sannolikheter från {forecast.counts.polls.toLocaleString('sv-SE')} opinionsundersökningar och {forecast.counts.elections} valresultat
+    med en <a href="/metod">statistisk modell</a> och {forecast.counts.sims.toLocaleString('sv-SE')} simuleringar.
+    Senast uppdaterad med {forecast.latest_poll.pollster} {forecast.latest_poll.date}.
+  </p>
+
+  <style>
+    .hero { padding: 30px 0 26px; }
+    .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+    .hero h1 { font-size: 44px; font-weight: 900; margin: 0 0 20px; letter-spacing: -0.03em; }
+    .bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+      background: var(--grid); margin-bottom: 22px; }
+    .seg.left { background: var(--bloc-left); }
+    .seg.centre { background: var(--bloc-centre); }
+    .seg.right { background: var(--bloc-right); }
+    .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .col { text-align: center; padding: 14px 8px; border-top: 3px solid; }
+    .col.left { border-color: var(--bloc-left); }
+    .col.centre { border-color: var(--bloc-centre); }
+    .col.right { border-color: var(--bloc-right); }
+    .pnum { font-size: 52px; line-height: 1; }
+    .col.left .pnum { color: var(--bloc-left); }
+    .col.centre .pnum { color: var(--bloc-centre); }
+    .col.right .pnum { color: var(--bloc-right); }
+    .pcs { font-size: 24px; font-weight: 800; margin-left: 2px; }
+    .lbl { font-weight: 800; font-size: 17px; margin-top: 6px; }
+    .sub { font-size: 13px; margin-top: 2px; }
+    .note { font-size: 13px; margin: 22px 0 0; text-align: center; max-width: 70ch; margin-inline: auto; }
+    .note a { color: var(--muted); text-decoration: underline; }
+    @media (max-width: 560px) {
+      .hero h1 { font-size: 32px; }
+      .pnum { font-size: 38px; }
+      .cols { gap: 8px; }
+      .lbl { font-size: 14px; }
+    }
+  </style>
+</section>

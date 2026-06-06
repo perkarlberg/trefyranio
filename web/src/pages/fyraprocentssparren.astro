@@ -1,0 +1,69 @@
+---
+import Base from '../layouts/Base.astro';
+import forecast from '../data/forecast.json';
+
+const bubble = forecast.parties
+  .filter((p) => p.code !== 'Övr' && (p.p_below_4pct ?? 0) > 0.01)
+  .sort((a, b) => b.p_below_4pct - a.p_below_4pct);
+const pct = (x) => Math.round(x * 100);
+const drama = forecast.swing_drama;
+const title = 'Fyraprocentsspärren 2026 – vilka partier åker ur riksdagen? | Trefyranio';
+const desc = 'Sannolikheten att varje parti hamnar under fyraprocentsspärren i riksdagsvalet 2026 – ' +
+  'och hur ett parti som åker ut kan fälla hela regeringsfrågan. Tusentals simuleringar.';
+---
+<Base title={title} description={desc}>
+  <article class="section thr">
+    <p class="section-label">Riksdagsvalet 2026</p>
+    <h2>Fyraprocentsspärren: vilka partier åker ur riksdagen?</h2>
+    <p class="lede">Ett parti måste få minst <b>4 % av rösterna i hela landet</b> (eller 12 % i en
+      enskild valkrets) för att komma in i riksdagen. Hamnar partiet under spärren förlorar det
+      <b>samtliga mandat</b> — och rösterna fördelas om på de andra partierna. Det gör spärren till
+      valets största dramaturgi: ett enda parti som faller kan avgöra vem som kan bilda regering.</p>
+
+    <h3>Risk att åka ut</h3>
+    <div class="gauges">
+      {bubble.map((p) => (
+        <a class="gauge" href={`/parti/${p.code.toLowerCase()}`}>
+          <div class="g-head"><span class="g-name" style={`color:${p.color}`}>{p.code}</span>
+            <span class="g-pct big-num">{pct(p.p_below_4pct)}<span class="g-cs">%</span></span></div>
+          <div class="g-track"><div class="g-fill" style={`width:${p.p_below_4pct * 100}%;background:${p.color}`}></div></div>
+          <div class="g-sub muted">{p.name} · snitt {(p.share_mean * 100).toFixed(1)} %</div>
+        </a>
+      ))}
+    </div>
+
+    <h3>Hur spärren avgör regeringsfrågan</h3>
+    <p>Tidöpartierna (M, KD, L, SD) behöver sina småpartier över spärren för att nå egen majoritet.
+      Faller ett av dem ut försvinner deras mandat — och kan tippa makten över till det rödgröna laget
+      eller göra Centern till vågmästare.</p>
+    <ul class="drama">
+      {['L', 'KD', 'MP', 'C'].filter((c) => drama[c]).map((c) => {
+        const d = drama[c];
+        const surv = d.p_right_maj_if_survives, out = d.p_right_maj_if_out;
+        return (
+          <li><b>{c}</b>: {pct(d.p_below_4pct)} % risk att åka ut.
+            {surv != null && out != null
+              ? ` Tidömajoritet ${pct(surv)} % om ${c} klarar sig, men bara ${pct(out)} % om ${c} åker ut.`
+              : surv != null ? ` Tidömajoritet ${pct(surv)} % när ${c} sitter kvar.` : ''}
+          </li>
+        );
+      })}
+    </ul>
+
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/vem-blir-statsminister">Vem blir statsminister?</a>
+      · <a href="/koalitioner">Möjliga regeringar</a> · <a href="/metod">Metod</a></p>
+
+    <style>
+      .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 28px; margin-bottom: 8px; }
+      .gauge { text-decoration: none; color: inherit; }
+      .g-head { display: flex; align-items: baseline; justify-content: space-between; }
+      .g-name { font-weight: 900; font-size: 20px; } .g-pct { font-size: 30px; }
+      .g-cs { font-size: 16px; font-weight: 800; }
+      .g-track { height: 10px; background: var(--grid); border-radius: 5px; overflow: hidden; margin: 6px 0 5px; }
+      .g-fill { height: 100%; border-radius: 5px; } .g-sub { font-size: 12.5px; }
+      .thr h3 { font-size: 18px; font-weight: 800; margin: 24px 0 6px; } .thr p { max-width: 64ch; }
+      .drama { max-width: 64ch; padding-left: 18px; } .drama li { margin-bottom: 6px; }
+      .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
+    </style>
+  </article>
+</Base>

@@ -1,0 +1,96 @@
+---
+import '../styles/global.css';
+import forecast from '../data/forecast.json';
+
+const { title = 'Valprognos 2026 – simulering av riksdagsvalet | Trefyranio', description =
+  'Datadriven prognos för riksdagsvalet 2026. Tusentals simuleringar ger sannolikheter för mandat, regering, koalitioner och fyraprocentsspärren. Uppdateras vid varje ny mätning.' } = Astro.props;
+const updated = forecast.updated;
+const GA_ID = 'G-Z0GZ8QSCJH';
+---
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="canonical" href={new URL(Astro.url.pathname, 'https://trefyran.io').href} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="sv_SE" />
+    <meta property="og:url" content={new URL(Astro.url.pathname, 'https://trefyran.io').href} />
+    <meta property="og:image" content="https://trefyran.io/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://trefyran.io/og.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+    {import.meta.env.PROD && (
+      <>
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}></script>
+        <script is:inline define:vars={{ GA_ID }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', GA_ID);
+        </script>
+      </>
+    )}
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap head-row">
+        <a class="brand" href="/">
+          <img src="/logo.png" alt="" width="85" height="85" />
+          <span class="wordmark">trefyran<span class="dot">io</span></span>
+        </a>
+        <nav class="nav">
+          <a href="/">Prognos</a>
+          <a href="/metod">Metod</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <slot />
+    </main>
+    <footer class="site-foot">
+      <div class="wrap">
+        <nav class="foot-nav">
+          <a href="/">Prognos</a>
+          <a href="/vem-blir-statsminister">Vem blir statsminister</a>
+          <a href="/koalitioner">Möjliga regeringar</a>
+          <a href="/fyraprocentssparren">Fyraprocentsspärren</a>
+          <a href="/ordlista">Ordlista</a>
+          <a href="/metod">Metod</a>
+        </nav>
+        <p>Uppdaterad {updated}. Prognosmodell trefyranio, av Krukis Data Science.</p>
+        <p class="faint">Data: Valmyndigheten, SCB, SwedishPolls.
+          Detta är en statistisk prognos, inte en förutsägelse.</p>
+      </div>
+    </footer>
+    <style>
+      .site-head { border-bottom: 1px solid var(--rule); }
+      .head-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+      .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+      .brand img { width: 85px; height: 85px; }       /* desktop: 2.5× */
+      .wordmark { font-weight: 900; font-size: 24px; letter-spacing: -0.02em; }
+      @media (max-width: 560px) {
+        .brand img { width: 51px; height: 51px; }     /* mobile: 1.5× */
+        .wordmark { font-size: 20px; }
+      }
+      .wordmark .dot { color: var(--muted); font-weight: 700; }
+      .nav a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; margin-left: 18px; }
+      .nav a:hover { color: var(--ink); }
+      .site-foot { margin-top: 40px; border-top: 1px solid var(--grid); padding: 24px 0 60px; }
+      .site-foot p { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+      .foot-nav { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+      .foot-nav a { color: var(--ink); text-decoration: none; font-weight: 700; font-size: 14px; }
+      .foot-nav a:hover { text-decoration: underline; }
+    </style>
+  </body>
+</html>
