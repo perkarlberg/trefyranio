@@ -85,6 +85,24 @@ CYCLE_2026 = cycle_for(2026)
 # election nears and polls accumulate); recalibrate at shorter horizons later.
 MISS_SIGMA = 0.0225  # 2.25pp — coverage-cal @14w (≈88% on 2018/2022 backtests)
 
+# Cross-party correlation of the polling miss. Real misses co-move within a bloc
+# (parties draw from a shared pool / a common pro-anti-incumbent mood), so an
+# iid miss understates the variance of BLOC totals — and the headline government
+# probabilities are bloc arithmetic. Modelled as a factor: each party's miss =
+# sqrt(rho)·(shared bloc factor) + sqrt(1-rho)·(idiosyncratic). This keeps each
+# party's MARGINAL sigma = MISS_SIGMA (so the share-space calibration still
+# holds) while giving within-bloc correlation = rho; renormalisation supplies the
+# cross-bloc anti-correlation. rho is an INFORMED ASSUMPTION, set deliberately
+# modest: cross-national evidence says within-bloc misses correlate and the
+# dangerous direction is UNDER-correlating (iid → overconfident bloc tails), but
+# Sweden's 2-cycle backtest shows realized bloc errors ≤ the iid prediction, so a
+# large rho would over-widen. 0.2 hedges toward the theory without over-claiming a
+# magnitude the data can't confirm. Calibrate with more cycles. Groups mirror
+# simulate's blocs. (rho=0.2 lifts P(Tidö maj) ~11%→14% vs iid.)
+MISS_RHO = 0.2
+_MISS_GROUP = {"S": 1, "M": 0, "SD": 0, "C": 2, "V": 1, "KD": 0, "MP": 1, "L": 0, "Övr": 3}
+MISS_GROUP_IDX = np.array([_MISS_GROUP[p] for p in PARTY_ORDER])
+
 
 @dataclass
 class ModelData:
@@ -253,15 +271,26 @@ def _softmax_with_ref(alr: np.ndarray) -> np.ndarray:
 
 
 def forecast_with_miss(
-    election_alr_trend: np.ndarray, sigma_miss: float = MISS_SIGMA, seed: int = 0
+    election_alr_trend: np.ndarray, sigma_miss: float = MISS_SIGMA,
+    rho: float = MISS_RHO, seed: int = 0,
 ) -> np.ndarray:
     """Election-day share samples (S, K): the trend at election week mapped to
     shares, plus a SHARE-space polling-miss error, clipped to >=0 and
-    renormalized. Share space (not ALR) because realized poll errors are
-    ~uniform in pp across party sizes — see MISS_SIGMA / Phase 5 calibration."""
+    renormalized.
+
+    The miss is correlated within blocs via a factor model (see MISS_RHO): each
+    party's miss = sqrt(rho)·shared-bloc-factor + sqrt(1-rho)·idiosyncratic. This
+    leaves the marginal per-party sigma at ``sigma_miss`` (so the Phase-5
+    share-space calibration holds) while inflating bloc-total variance — which is
+    what the government-formation probabilities depend on. Share space (not ALR)
+    because realized poll errors are ~uniform in pp across party sizes."""
     rng = np.random.default_rng(seed)
     base = _softmax_with_ref(election_alr_trend)              # (S, K) shares
-    noisy = np.clip(base + rng.normal(0.0, sigma_miss, size=base.shape), 0.0, None)
+    ngroups = int(MISS_GROUP_IDX.max()) + 1
+    factor = rng.standard_normal((base.shape[0], ngroups))[:, MISS_GROUP_IDX]  # shared per bloc
+    idio = rng.standard_normal(base.shape)
+    miss = sigma_miss * (np.sqrt(rho) * factor + np.sqrt(1.0 - rho) * idio)
+    noisy = np.clip(base + miss, 0.0, None)
     return noisy / noisy.sum(axis=-1, keepdims=True)
 
 
