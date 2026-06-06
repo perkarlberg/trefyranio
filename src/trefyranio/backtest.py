@@ -43,6 +43,9 @@ from trefyranio.model import (
 )
 
 BACKTEST_YEARS = [2018, 2022]   # current party system, dense polling
+# TODO: extend to 2010 & 2014 (4 cycles total). More cycles would let us
+# calibrate MISS_SIGMA more tightly AND estimate the within-bloc miss correlation
+# (MISS_RHO) from data instead of assuming it — 2 cycles can't pin either.
 BT_DIR = PROCESSED_DIR / "backtests"
 N_PARTIES = 8                   # the eight Riksdag parties (exclude Övr)
 Z80 = 1.2816                    # 10–90% half-width in sd units

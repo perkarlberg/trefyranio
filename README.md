@@ -123,7 +123,12 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       backtests). **Momentum thesis confirmed**: velocity cuts rising-party
       under-prediction 0.60→0.52pp. Point MAE 0.9–1.5pp. Found & fixed: the miss
       belongs in share space, not ALR (poll errors are ~uniform in pp across
-      party sizes). Open: horizon-dependent `MISS_SIGMA`, more backtest cycles.
+      party sizes). Within-bloc miss correlation modelled as a factor
+      (`MISS_RHO`, deliberately modest at 0.2 — see model.py).
+      - [ ] **Longer backtest: add 2010 & 2014 (4 cycles)** — to calibrate
+            `MISS_SIGMA` more tightly and estimate `MISS_RHO` (within-bloc miss
+            correlation) from data instead of assuming it; plus horizon-dependent
+            `MISS_SIGMA`.
 - [~] **Phase 6** — Astro webapp (Swedish, prime-era 538 look) + Cloudflare
       Pages + local recompute/publish.
   - [x] `parties.py` (verified palette), `web_export.py` (→ `web/src/data/*.json`:
