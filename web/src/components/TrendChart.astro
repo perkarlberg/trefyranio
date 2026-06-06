@@ -166,22 +166,45 @@ const cfg = {
 
       // poll modal
       const modal = document.getElementById('pollmodal'), body = document.getElementById('modal-body');
+      // Build the modal with DOM APIs (textContent), never innerHTML — so any
+      // HTML in an upstream pollster name renders as text, not markup.
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+      };
       function openModal(idx) {
         const p = cfg.polls[idx], ps = cfg.pollsters[p.pollster] || {};
-        const rows = cfg.order.map((c) => {
-          const raw = (p.raw[c] * 100).toFixed(1), adj = (p.adjusted[c] * 100).toFixed(1);
-          const bias = ((ps.house_bias?.[c] ?? 0) * 100);
-          return `<tr><td style="color:${cfg.colors[c]};font-weight:800">${c}</td><td>${raw}</td><td>${adj}</td>
-            <td class="faint">${bias >= 0 ? '+' : ''}${bias.toFixed(1)}</td></tr>`;
-        }).join('');
-        body.innerHTML = `
-          <h4>${p.pollster} <span class="faint">· ${p.date}</span></h4>
-          <p class="mmeta">${p.method}${p.n ? ' · ' + p.n.toLocaleString('sv-SE') + ' svar' : ''}${
-            ps.tier ? ' · ' + ps.tier + (ps.mae_pp ? ' (snittfel ' + ps.mae_pp + ' pp)' : '')
-                    : (ps.note ? ' · ' + ps.note : '')}</p>
-          <table class="mtab"><thead><tr><th>Parti</th><th>Uppmätt</th><th>Justerat</th><th>Lutning</th></tr></thead>
-          <tbody>${rows}</tbody></table>
-          <p class="faint mfoot">”Justerat” = uppmätt minus institutets historiska lutning (house effect) för partiet.</p>`;
+        body.replaceChildren();
+
+        const h4 = el('h4', null, p.pollster + ' ');
+        h4.appendChild(el('span', 'faint', '· ' + p.date));
+        body.appendChild(h4);
+
+        let meta = p.method;
+        if (p.n) meta += ' · ' + p.n.toLocaleString('sv-SE') + ' svar';
+        if (ps.tier) meta += ' · ' + ps.tier + (ps.mae_pp ? ' (snittfel ' + ps.mae_pp + ' pp)' : '');
+        else if (ps.note) meta += ' · ' + ps.note;
+        body.appendChild(el('p', 'mmeta', meta));
+
+        const table = el('table', 'mtab'), thead = el('thead'), htr = el('tr');
+        ['Parti', 'Uppmätt', 'Justerat', 'Lutning'].forEach((h) => htr.appendChild(el('th', null, h)));
+        thead.appendChild(htr); table.appendChild(thead);
+        const tb = el('tbody');
+        cfg.order.forEach((c) => {
+          const tr = el('tr');
+          const td0 = el('td', null, c); td0.style.color = cfg.colors[c]; td0.style.fontWeight = '800';
+          const bias = (ps.house_bias?.[c] ?? 0) * 100;
+          tr.append(td0, el('td', null, (p.raw[c] * 100).toFixed(1)),
+            el('td', null, (p.adjusted[c] * 100).toFixed(1)),
+            el('td', 'faint', (bias >= 0 ? '+' : '') + bias.toFixed(1)));
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb); body.appendChild(table);
+
+        body.appendChild(el('p', 'faint mfoot',
+          '”Justerat” = uppmätt minus institutets historiska lutning (house effect) för partiet.'));
         modal.hidden = false;
       }
       document.querySelectorAll('.prow').forEach((r) => r.addEventListener('click', () => openModal(+r.dataset.idx)));
