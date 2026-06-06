@@ -70,6 +70,22 @@ fundamentals prior (the Economist approach), so the spread *emerges* from the
 model — is on the roadmap. Until then the add-on is calibrated, horizon-aware, and
 transparent rather than hidden.
 
+### ⚠️ Known issue: the latent sampler does not yet converge
+
+4-chain diagnostics on the election-day shares show **r-hat 15–34 and ESS≈2** —
+the NUTS fit of the weekly 209×8 ALR latent is badly mixed. The latent is heavily
+over-parameterised (~3,300 innovation params vs ~240 polls) and the level+velocity
+walk with *sampled* scale parameters has a funnel geometry NUTS can't navigate.
+Consequences: the posterior **mean is seed-sensitive** (SD ±1.5pp across seeds)
+and the model's own spread is untrustworthy (hence the calibrated miss add-on).
+The central forecast still tracks the polls (it's data-anchored via the
+likelihood), but **the probabilistic outputs are provisional until this is fixed.**
+
+Planned fix (foundational, next priority): coarsen the time grid (≈monthly),
+fix/tighten the walk-scale priors to remove the funnel, reconsider the velocity
+term (its momentum gain was marginal and it's the main mixing culprit), run
+multiple chains, and require **r-hat < 1.05** before trusting the fit.
+
 ## Electoral system (encoded in `allocator.py`)
 
 - 349 seats = 310 fixed constituency seats + 39 leveling seats

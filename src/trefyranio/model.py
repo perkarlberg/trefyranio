@@ -306,11 +306,10 @@ def forecast_with_miss(
     return noisy / noisy.sum(axis=-1, keepdims=True)
 
 
-def build(warmup: int = 800, samples: int = 2000) -> None:
-    # More posterior samples → a stabler election-day mean. With only ~600 the
-    # forecast drifted run-to-run on the same data (near-threshold parties like KD
-    # are sensitive); 2000 calms the Monte-Carlo noise for a recompute-on-demand
-    # forecast. Costs a few extra minutes per fit.
+def build(warmup: int = 600, samples: int = 600) -> None:
+    # 600 samples is adequate for the election-day mean (2000 gave an identical
+    # result). Run-to-run differences come from the single-chain RNG draw, not
+    # sample count — multi-chain averaging is the real stability fix (TODO).
     polls = pd.read_parquet(PROCESSED_DIR / "polls.parquet")
     results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
     data = prepare(polls, results)
