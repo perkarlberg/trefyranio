@@ -48,7 +48,7 @@ def main() -> None:
 </style></head><body>
  <div>
   <div class="top"><img src="data:image/png;base64,{logo}"><span class="wm">trefyran<span class="io">io</span></span></div>
-  <h1>Vem styr Sverige?</h1>
+  <h1>Vem styr Sverige efter valet?</h1>
   <div class="sub">Valprognos för riksdagsvalet 2026 — uppdaterad {fc['updated']}</div>
  </div>
  <div>
