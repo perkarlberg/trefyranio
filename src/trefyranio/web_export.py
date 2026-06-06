@@ -27,7 +27,8 @@ from trefyranio.simulate import CENTRE, COALITIONS, ELECTION_YEAR, LEADERS, LEFT
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
-WEB_DATA_DIR = REPO_ROOT / "web" / "src" / "data"
+WEB_DATA_DIR = REPO_ROOT / "web" / "src" / "data"      # build-time imports (inlined)
+WEB_PUBLIC_DIR = REPO_ROOT / "web" / "public"          # served as-is, fetched at runtime
 
 _BLOC = {**{p: "right" for p in RIGHT}, **{p: "left" for p in LEFT},
          **{p: "centre" for p in CENTRE}}
@@ -222,14 +223,16 @@ def build() -> None:
     latest_poll = {"pollster": str(latest["pollster"]), "date": latest["date"].strftime("%Y-%m-%d")}
 
     WEB_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    WEB_PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+    # Build-time (inlined): small/shared JSON. Runtime-fetched: the big 10k
+    # seat draws, so it doesn't bloat every homepage load.
     outputs = {
-        "forecast.json": build_forecast(as_of, weeks_to_go, counts, latest_poll),
-        "trend.json": build_trend(),
-        "polls.json": build_polls_detail(),
-        "seat_draws.json": build_seat_draws(),
+        WEB_DATA_DIR / "forecast.json": build_forecast(as_of, weeks_to_go, counts, latest_poll),
+        WEB_DATA_DIR / "trend.json": build_trend(),
+        WEB_DATA_DIR / "polls.json": build_polls_detail(),
+        WEB_PUBLIC_DIR / "seat_draws.json": build_seat_draws(),
     }
-    for name, obj in outputs.items():
-        path = WEB_DATA_DIR / name
+    for path, obj in outputs.items():
         path.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
         print(f"wrote {path.relative_to(REPO_ROOT)}  ({path.stat().st_size/1024:.0f} KB)")
 

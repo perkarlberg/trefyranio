@@ -1,19 +1,21 @@
 ---
-import seatData from '../data/seat_draws.json';
 import forecast from '../data/forecast.json';
-const { parties, colors, majority, draws } = seatData;
+// Column order matches seat_draws.json (RIKSDAG_PARTIES order in web_export).
+const ORDER = ['S', 'M', 'SD', 'C', 'V', 'KD', 'MP', 'L'];
+const colors = Object.fromEntries(forecast.parties.map((p) => [p.code, p.color]));
 const nameOf = Object.fromEntries(forecast.parties.map((p) => [p.code, p.name]));
-// Pre-select the current governing constellation (Tidö).
-const preset = forecast.government.blocs.right;
+const majority = forecast.majority;
+const sims = forecast.counts.sims;
+const preset = forecast.government.blocs.right;  // start on the Tidö constellation
 ---
-<section class="section">
+<section class="section" id="coalition">
   <p class="section-label">Koalitioner</p>
   <h2>Vilka kan bilda regering?</h2>
   <p class="lede">Inget parti styr ensamt. Klicka ihop en koalition så räknas dess chans till egen
-    majoritet (≥175 mandat) fram direkt ur {draws.length.toLocaleString('sv-SE')} simuleringar.</p>
+    majoritet (≥175 mandat) fram direkt ur {sims.toLocaleString('sv-SE')} simuleringar.</p>
 
   <div class="chips">
-    {parties.map((code) => (
+    {ORDER.map((code) => (
       <button class="chip" data-code={code} aria-pressed={preset.includes(code) ? 'true' : 'false'}
         style={`--c:${colors[code]}`}>
         <span class="dot"></span>{code}
@@ -23,31 +25,38 @@ const preset = forecast.government.blocs.right;
 
   <div class="cb-result">
     <div class="cb-prob">
-      <div class="big-num" id="cb-pct">–</div>
+      <div class="big-num" id="cb-pct">…</div>
       <div class="cb-lbl muted">chans till egen majoritet</div>
     </div>
     <div class="cb-detail">
-      <div class="cb-bar"><div class="cb-fill" id="cb-fill"></div><div class="cb-maj" title="175 = majoritet"></div></div>
+      <div class="cb-bar"><div class="cb-fill" id="cb-fill"></div><div class="cb-maj"></div></div>
       <div class="cb-seats muted"><span id="cb-mean">–</span> mandat i snitt <span class="faint">[<span id="cb-lo">–</span>–<span id="cb-hi">–</span>]</span> · majoritet vid {majority}</div>
-      <div class="cb-pick faint" id="cb-pick"></div>
+      <div class="cb-pick faint" id="cb-pick">Laddar simuleringar …</div>
     </div>
   </div>
 
-  <script is:inline define:vars={{ parties, colors, majority, draws, preset, nameOf }}>
+  <script is:inline define:vars={{ ORDER, majority, preset, nameOf, sims }}>
     (function () {
-      const sel = new Set(preset);
       const $ = (id) => document.getElementById(id);
-      const chips = Array.from(document.querySelectorAll('.chip'));
-      const maxSeats = 250; // bar scale
+      const sel = new Set(preset);
+      const chips = Array.from(document.querySelectorAll('#coalition .chip'));
+      const maxSeats = 250;
+      let draws = null, dparties = null, loading = false;
 
       function quantile(sorted, q) {
-        const i = (sorted.length - 1) * q;
-        const lo = Math.floor(i), hi = Math.ceil(i);
+        const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
         return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
       }
-
+      function load() {
+        if (draws || loading) return;
+        loading = true;
+        fetch('/seat_draws.json').then((r) => r.json()).then((d) => {
+          draws = d.draws; dparties = d.parties; recompute();
+        }).catch(() => { $('cb-pick').textContent = 'Kunde inte ladda simuleringar.'; });
+      }
       function recompute() {
-        const idx = parties.map((c, i) => (sel.has(c) ? i : -1)).filter((i) => i >= 0);
+        if (!draws) { load(); return; }
+        const idx = ORDER.filter((c) => sel.has(c)).map((c) => dparties.indexOf(c));
         if (!idx.length) {
           $('cb-pct').textContent = '–'; $('cb-mean').textContent = '–';
           $('cb-lo').textContent = '–'; $('cb-hi').textContent = '–';
@@ -55,8 +64,7 @@ const preset = forecast.government.blocs.right;
           return;
         }
         const sums = draws.map((row) => idx.reduce((s, i) => s + row[i], 0));
-        const wins = sums.filter((s) => s >= majority).length;
-        const p = wins / sums.length;
+        const p = sums.filter((s) => s >= majority).length / sums.length;
         const mean = sums.reduce((a, b) => a + b, 0) / sums.length;
         const sorted = sums.slice().sort((a, b) => a - b);
         $('cb-pct').textContent = Math.round(p * 100) + '%';
@@ -65,8 +73,7 @@ const preset = forecast.government.blocs.right;
         $('cb-lo').textContent = Math.round(quantile(sorted, 0.1));
         $('cb-hi').textContent = Math.round(quantile(sorted, 0.9));
         $('cb-fill').style.width = Math.min(100, (mean / maxSeats) * 100) + '%';
-        $('cb-pick').textContent = parties.filter((c) => sel.has(c))
-          .map((c) => nameOf[c] || c).join(' + ');
+        $('cb-pick').textContent = ORDER.filter((c) => sel.has(c)).map((c) => nameOf[c] || c).join(' + ');
       }
 
       chips.forEach((btn) => {
@@ -78,9 +85,11 @@ const preset = forecast.government.blocs.right;
           recompute();
         });
       });
-      // place the 175 marker on the bar
-      document.querySelector('.cb-maj').style.left = ((majority / maxSeats) * 100) + '%';
-      recompute();
+      document.querySelector('#coalition .cb-maj').style.left = ((majority / maxSeats) * 100) + '%';
+      // Lazy-load the draws when the widget scrolls into view (fallback: timeout).
+      const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { load(); io.disconnect(); } });
+      io.observe(document.getElementById('coalition'));
+      setTimeout(load, 4000);
     })();
   </script>
 

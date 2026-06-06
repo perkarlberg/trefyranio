@@ -8,6 +8,13 @@ import Base from '../layouts/Base.astro';
     <p class="lede">En statistisk prognos för riksdagsvalet 2026, inspirerad av FiveThirtyEight men
       byggd för det svenska valsystemet.</p>
 
+    <div class="transparency">
+      <p>En prognos är bara så trovärdig som den är genomskinlig. Därför är <b>allt öppet</b> — varje
+        steg nedan, från datainsamling till simulering, finns som granskningsbar källkod. Du behöver
+        inte lita på oss; du kan läsa exakt hur siffrorna räknas fram.</p>
+      <p><a href="/code">Se hela modellen och simuleringen som öppen källkod →</a></p>
+    </div>
+
     <h3>Opinionsmätningar vägs samman</h3>
     <p>Alla publicerade väljarbarometrar (Novus, Verian/Sifo, Demoskop, Ipsos, Indikator, Sentio,
       SCB:s PSU m.fl.) samlas in. En dynamisk bayesiansk modell skattar varje partis stöd över tid.
@@ -44,6 +51,10 @@ import Base from '../layouts/Base.astro';
     <style>
       .method h3 { font-size: 18px; font-weight: 800; margin: 24px 0 4px; }
       .method p { max-width: 64ch; margin: 0 0 4px; }
+      .transparency { background: var(--card); border: 1px solid var(--grid); border-left: 3px solid var(--ink);
+        border-radius: 8px; padding: 14px 18px; margin: 18px 0 8px; }
+      .transparency p { margin: 0 0 6px; } .transparency p:last-child { margin: 0; }
+      .transparency a { color: var(--ink); font-weight: 700; }
     </style>
   </article>
 </Base>

@@ -35,7 +35,9 @@ PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 ELECTION_YEAR = 2026
 MAJORITY = 175       # of 349
 N_SIM = 10000        # predictive Monte-Carlo draws (latent resample × fresh miss)
-BROWSER_DRAWS = 2000  # subset shipped to the coalition-builder client
+# All N_SIM draws ship to the coalition-builder client (lazy-fetched as a
+# separate file) so its odds match the headline coalition table exactly.
+BROWSER_DRAWS = N_SIM
 SEAT_DRAW_SEED = 7
 
 # --- Bloc configuration (2026 alignments; edit as politics shifts) ----------

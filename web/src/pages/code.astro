@@ -1,0 +1,47 @@
+---
+import Base from '../layouts/Base.astro';
+const REPO = 'https://github.com/perkarlberg/trefyranio';
+const title = 'Källkod – öppen modell och simulering | Trefyranio';
+const desc = 'Hela valprognosen är öppen källkod: bayesiansk sammanvägning av opinionsmätningar, ' +
+  'Monte Carlo-simulering av mandat och regeringsbildning, samt webappen. MIT-licens på GitHub.';
+---
+<Base title={title} description={desc}>
+  <article class="section code">
+    <p class="section-label">Öppen källkod</p>
+    <h2>Hela modellen är öppen</h2>
+    <p class="lede">En prognos är bara så trovärdig som den är genomskinlig. Därför är hela
+      trefyranio — datainsamling, den statistiska modellen, simuleringarna och webappen — öppen
+      källkod under MIT-licens. Granska den, ifrågasätt den, återanvänd den.</p>
+
+    <p><a class="repo" href={REPO} rel="noopener">Se koden på GitHub →</a></p>
+
+    <h3>Vad finns i repot</h3>
+    <ul class="what">
+      <li><b>ETL</b> — hämtar opinionsmätningar (SwedishPolls) och valresultat (SCB) till en städad datamängd.</li>
+      <li><b>Mätinstitutens betyg & husbias</b> — historisk träffsäkerhet och systematisk lutning per institut.</li>
+      <li><b>Den bayesianska modellen</b> (NumPyro) — väger samman mätningarna och skattar både nuläge och rörelse.</li>
+      <li><b>Simulatorn</b> — drar tiotusentals valutgångar genom det riktiga valsystemet (4 %-spärr, jämkade uddatalsmetoden, utjämningsmandat) → mandat, regeringsbildning, koalitioner, spärröverlevnad.</li>
+      <li><b>Backtest & kalibrering</b> — mäter modellens osäkerhet mot hur fel mätningarna låg före valen 2018 och 2022.</li>
+      <li><b>Webappen</b> (Astro) — den här sajten.</li>
+    </ul>
+
+    <h3>Data</h3>
+    <p>Modellen bygger på öppna källor: <b>SwedishPolls</b> (CC0), <b>SCB</b> (CC0) och
+      <b>Valmyndigheten</b>. Ingen tillträdesbegränsad data (t.ex. VALU-mikrodata) sprids vidare här.</p>
+
+    <p class="faint">MIT-licens · © 2026 Krukis Data Science · en statistisk prognos, inte en
+      förutsägelse, och inte knuten till något parti.</p>
+
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/metod">Metod</a></p>
+
+    <style>
+      .code p { max-width: 64ch; }
+      .repo { display: inline-block; background: var(--ink); color: #fff; text-decoration: none;
+        font-weight: 800; padding: 11px 20px; border-radius: 999px; font-size: 15px; }
+      .repo:hover { opacity: .9; }
+      .code h3 { font-size: 18px; font-weight: 800; margin: 26px 0 6px; }
+      .what { max-width: 66ch; padding-left: 18px; } .what li { margin-bottom: 7px; }
+      .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
+    </style>
+  </article>
+</Base>
