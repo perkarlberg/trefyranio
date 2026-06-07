@@ -35,19 +35,27 @@ representation:
   election result.
 - **Dirichlet-Multinomial** poll likelihood (absorbs nonsampling error via fixed
   overdispersion).
-- Per-pollster **house effects** (centered across parties).
-- **Pollster ratings** computed from scratch: historical error vs official
-  results, shrunk toward a global mean. SCB/PSU weighted as the benchmark.
+- Per-pollster **house effects** (centered across parties), **warm-started from
+  each pollster's historical lean** (Phase-2 ratings, de-biased of the field-wide
+  component); the current cycle's data overrides as it accumulates.
+- **Accuracy-weighted likelihood**: pollsters that historically hit closest get
+  higher Dirichlet concentration (tighter constraint on the latent). New entrants
+  start neutral.
+- **Field-bias correction**: a heavily-shrunk (30%) adjustment for the industry's
+  persistent per-party miss, applied to the election-day forecast (see below).
 - Fit with **multiple chains** + an r-hat convergence check (see "Convergence").
 
 (The constituency-level / fundamentals-prior pieces of the full Economist model
 are not yet implemented — see roadmap.)
 
 **Swedish-specific tweaks:** the 4% national / 12% constituency threshold;
-government-formation as the headline output; correction for the persistent
-~2-3pp industry-wide **underestimate of SD**; the Novus 2023 phone→web
-methodology break; and flagging *stödröstning* (vote-lending to keep small
-allies above 4%), which polls capture poorly.
+government-formation as the headline output; a **field-bias correction** from the
+2010–2022 final-poll record — which shows the largest systematic industry misses
+are an **understated S (~2.2pp)** and **overstated V/MP (~1pp)**, with SD's
+final-poll bias actually small (~0.2pp) once pollsters adjusted; the Novus 2023
+phone→web methodology break; and flagging *stödröstning* (vote-lending to keep
+small allies above 4%), which polls capture poorly. The correction is applied at
+30% strength (4 elections is noisy; pollsters partly adapt).
 
 ## Uncertainty model (and an honest limitation)
 
@@ -169,10 +177,12 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       **horizon-dependent**, and
       **within-bloc correlated** (see "Uncertainty model").
       - [ ] **Model-carried error** — make the spread emerge from the latent
-            (backward-from-election-day random walk with horizon-accumulating
-            innovations + explicit election-day fundamentals prior, Economist-style)
-            instead of the calibrated add-on. The deeper fix.
-      - [ ] Feed Phase-2 house effects / industry bias as priors.
+            (forward projection from the last poll with calibrated, bloc-correlated
+            innovations + terminal floor) instead of the calibrated add-on. The
+            deeper fix; next up.
+      - [x] **Phase-2 ratings wired into the fit** — house-effect priors (de-biased,
+            warm-start), accuracy weights (per-poll concentration), and a shrunk
+            field-bias correction at the election-day forecast.
 - [x] **Phase 4** — simulator (`simulate.py`): forecast draws → 4%/12% gate →
       allocator → seat distributions → bloc & government-formation probabilities,
       coalition table, threshold survival, kingmaker drama. Config-driven blocs

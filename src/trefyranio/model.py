@@ -133,6 +133,10 @@ class ModelData:
     anchor_alr: np.ndarray    # (KM1,) ALR of the previous result
     pollsters: list[str]
     weeks_dates: list[dt.date]
+    # Phase-2 ratings, wired in (zeros/ones/zeros when use_ratings=False):
+    house_prior_alr: np.ndarray      # (P, KM1) per-pollster ALR house-effect prior MEAN
+    poll_weight: np.ndarray          # (n_polls,) accuracy weight of each poll's pollster
+    industry_shift_share: np.ndarray # (K,) share-space election-day field-bias correction
 
 
 def _alr(p: np.ndarray) -> np.ndarray:
@@ -141,15 +145,65 @@ def _alr(p: np.ndarray) -> np.ndarray:
     return np.log(np.delete(p, REF) / p[REF])
 
 
+# Industry-bias shrinkage. The field-wide miss (e.g. the persistent SD/S
+# underestimate) is estimated on only 4 elections and pollsters have partly
+# adapted, so we apply only a fraction of it as an election-day correction.
+# NOTE: when the model-carried-error rework lands, this share-space shift becomes
+# the election-day fundamentals/anchor prior's mean offset — a one-line move.
+SHRINK_IND = 0.30
+
+
+def _build_house_priors(pollsters: list[str], anchor_share: np.ndarray,
+                        house_eff: pd.DataFrame, industry: pd.DataFrame) -> np.ndarray:
+    """Per-pollster ALR house-effect prior MEANS from history → (P, KM1).
+
+    ratings.py measures house effects vs the ACTUAL result (= a pollster's lean
+    vs the field PLUS the field-wide industry bias) in SHARE space. The model's
+    `house` is vs the poll CONSENSUS in ALR. So we (1) de-bias — subtract the
+    field-wide `industry_bias` so each prior is the pollster's lean *relative to
+    the field* (≈ consensus), which is also what the model's centring expects;
+    (2) map share→ALR exactly via the Jacobian at the `anchor` baseline. New
+    entrants (no history) get a zero prior. No explicit centring here: the
+    de-bias already leaves matched priors ≈field-mean-zero, and the model's
+    `house -= house.mean(0)` enforces identifiability."""
+    P = len(pollsters)
+    ind = {r.party: r.bias for r in industry.itertuples()}
+    industry_vec = np.array([ind.get(p, 0.0) for p in PARTY_ORDER])      # (K,)
+    he = house_eff.set_index(["pollster", "party"])["house_effect"]
+    prior = np.zeros((P, KM1))
+    for i, name in enumerate(pollsters):
+        effect = np.array([he.get((name, p), 0.0) for p in PARTY_ORDER])  # (K,) share
+        if not np.any(effect):                                            # new entrant
+            continue
+        debiased = effect - industry_vec
+        perturbed = np.clip(anchor_share + debiased, 1e-6, None)
+        perturbed = perturbed / perturbed.sum()
+        prior[i] = _alr(perturbed) - _alr(anchor_share)
+    return prior
+
+
+def _load_pollster_weights(pollsters: list[str], ratings: pd.DataFrame) -> np.ndarray:
+    """Per-pollster accuracy weight (centred on 1.0); 1.0 for new entrants → (P,)."""
+    w = ratings.set_index("pollster")["weight"]
+    return np.array([float(w.get(name, 1.0)) for name in pollsters])
+
+
 def prepare(polls: pd.DataFrame, results: pd.DataFrame,
-            cycle: CycleConfig = CYCLE_2026, as_of: dt.date | None = None) -> ModelData:
+            cycle: CycleConfig = CYCLE_2026, as_of: dt.date | None = None,
+            use_ratings: bool = True) -> ModelData:
     """Assemble model inputs from the poll + result spines for a cycle.
 
     Polls are restricted to the cycle window [start, election_day]. ``as_of``
     additionally drops polls taken after that date — used to backtest at a
     chosen *horizon* (e.g. cut 14 weeks before the election to match how far the
     live forecast sits from its last poll). The forecast still targets election
-    day, so the gap between ``as_of`` and election day is the forecast horizon."""
+    day, so the gap between ``as_of`` and election day is the forecast horizon.
+
+    ``use_ratings`` wires in the Phase-2 ratings layer (house-effect priors,
+    accuracy weights, industry-bias correction). Backtests set it False: the
+    ratings span 2010–2022, so applying them to a pre-2022 cycle would leak
+    future results — and the backtest's job is to test the uncertainty model,
+    not the warm-start."""
     cutoff = min(cycle.election_day, as_of) if as_of else cycle.election_day
     df = polls.copy()
     df["date"] = df["field_end"].fillna(df["pub_date"])
@@ -188,10 +242,34 @@ def prepare(polls: pd.DataFrame, results: pd.DataFrame,
     anchor = anchor / anchor.sum()
 
     weeks_dates = [cycle.start + dt.timedelta(weeks=int(w)) for w in range(n_weeks)]
+
+    # Phase-2 ratings layer. Guarded: missing files (or use_ratings=False) →
+    # neutral defaults (zero priors, unit weights, no industry shift).
+    P = len(pollsters)
+    house_prior = np.zeros((P, KM1))
+    poll_weight = np.ones(len(counts))
+    industry_shift = np.zeros(K)
+    he_path = PROCESSED_DIR / "pollster_house_effects.parquet"
+    ind_path = PROCESSED_DIR / "industry_bias.parquet"
+    rat_path = PROCESSED_DIR / "pollster_ratings.parquet"
+    if use_ratings and he_path.exists() and ind_path.exists() and rat_path.exists():
+        industry = pd.read_parquet(ind_path)
+        house_prior = _build_house_priors(pollsters, anchor,
+                                          pd.read_parquet(he_path), industry)
+        pollster_w = _load_pollster_weights(pollsters, pd.read_parquet(rat_path))
+        poll_weight = pollster_w[pollster]
+        ind = {r.party: r.bias for r in industry.itertuples()}
+        # Field UNDERSTATES a party (bias<0) → push its election-day share UP.
+        industry_shift = np.array([-SHRINK_IND * ind.get(p, 0.0) for p in PARTY_ORDER])
+    elif use_ratings:
+        print("  ratings parquets missing → neutral priors/weights (run ratings.build())")
+
     return ModelData(
         counts=counts, totals=totals, week=week, pollster=pollster,
         n_weeks=n_weeks, election_week=election_week, anchor_alr=_alr(anchor),
         pollsters=pollsters, weeks_dates=weeks_dates,
+        house_prior_alr=house_prior, poll_weight=poll_weight,
+        industry_shift_share=industry_shift,
     )
 
 
@@ -223,8 +301,15 @@ def model(data: ModelData, use_velocity: bool = False):
     Likelihood: Dirichlet-Multinomial with fixed overdispersion."""
     T, P = data.n_weeks, len(data.pollsters)
 
+    # House effects: non-centred around a per-pollster PRIOR MEAN from history
+    # (data.house_prior_alr; zeros when ratings off). The residual ~Normal(0,
+    # SIGMA_HOUSE) lets the current cycle override. Still centred across pollsters
+    # so the latent path is the consensus (identifiability vs the level).
+    house_prior = jnp.asarray(data.house_prior_alr)
     house = numpyro.sample("house", dist.Normal(0, SIGMA_HOUSE).expand([P, KM1]).to_event(2))
-    house = house - house.mean(axis=0)  # centred → latent path is the consensus
+    house = house_prior + house
+    house = house - house.mean(axis=0)
+    numpyro.deterministic("house_effective", house)  # the actual per-pollster effect
 
     level0 = numpyro.sample(
         "level0", dist.Normal(jnp.asarray(data.anchor_alr), 0.15).to_event(1)
@@ -249,9 +334,14 @@ def model(data: ModelData, use_velocity: bool = False):
 
     obs_alr = levels[data.week] + house[data.pollster]      # (n_polls, KM1)
     p_obs = jax.nn.softmax(_full_logits(obs_alr), axis=-1)  # (n_polls, K)
+    # Accuracy weights enter as per-poll concentration: a more accurate pollster
+    # gets higher Dirichlet concentration → lower over-dispersion → its poll
+    # constrains the latent more tightly. (Scaling total_count would be invalid —
+    # it's the integer trial count.) Unit weights when ratings off.
+    kappa_vec = KAPPA * jnp.asarray(data.poll_weight)[:, None]
     numpyro.sample(
         "counts",
-        dist.DirichletMultinomial(KAPPA * jnp.clip(p_obs, 1e-7, 1.0),
+        dist.DirichletMultinomial(kappa_vec * jnp.clip(p_obs, 1e-7, 1.0),
                                   total_count=jnp.asarray(data.totals)),
         obs=jnp.asarray(data.counts),
     )
@@ -311,11 +401,16 @@ def _softmax_with_ref(alr: np.ndarray) -> np.ndarray:
 
 def forecast_with_miss(
     election_alr_trend: np.ndarray, sigma_miss: float = MISS_SIGMA,
-    rho: float = MISS_RHO, seed: int = 0,
+    rho: float = MISS_RHO, seed: int = 0, industry_shift: np.ndarray | None = None,
 ) -> np.ndarray:
     """Election-day share samples (S, K): the trend at election week mapped to
-    shares, plus a SHARE-space polling-miss error, clipped to >=0 and
-    renormalized.
+    shares, optionally shifted by the field-bias correction, plus a SHARE-space
+    polling-miss error, clipped to >=0 and renormalized.
+
+    ``industry_shift`` (K,) is the heavily-shrunk field-wide bias correction
+    (e.g. push SD/S up where the industry persistently understates them). Applied
+    to the central forecast BEFORE the miss; it shifts the mean, the miss adds
+    spread around it.
 
     The miss is correlated within blocs via a factor model (see MISS_RHO): each
     party's miss = sqrt(rho)·shared-bloc-factor + sqrt(1-rho)·idiosyncratic. This
@@ -325,6 +420,9 @@ def forecast_with_miss(
     because realized poll errors are ~uniform in pp across party sizes."""
     rng = np.random.default_rng(seed)
     base = _softmax_with_ref(election_alr_trend)              # (S, K) shares
+    if industry_shift is not None:
+        base = np.clip(base + industry_shift, 0.0, None)
+        base = base / base.sum(axis=-1, keepdims=True)
     ngroups = int(MISS_GROUP_IDX.max()) + 1
     factor = rng.standard_normal((base.shape[0], ngroups))[:, MISS_GROUP_IDX]  # shared per bloc
     idio = rng.standard_normal(base.shape)
@@ -335,8 +433,8 @@ def forecast_with_miss(
 
 def build(warmup: int = 600, samples: int = 600) -> None:
     # 600 samples is adequate for the election-day mean (2000 gave an identical
-    # result). Run-to-run differences come from the single-chain RNG draw, not
-    # sample count — multi-chain averaging is the real stability fix (TODO).
+    # result). Seed-robustness comes from multi-chain averaging — fit() runs 4
+    # vectorized chains with an r-hat check — not from sample count.
     polls = pd.read_parquet(PROCESSED_DIR / "polls.parquet")
     results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
     data = prepare(polls, results)
@@ -350,15 +448,18 @@ def build(warmup: int = 600, samples: int = 600) -> None:
     # dependent miss sigma (tighter as the election nears).
     horizon = int(data.election_week - data.week.max())
     sigma = miss_sigma_for_horizon(horizon)
-    print(f"horizon {horizon}w → miss sigma {sigma*100:.2f}pp")
-    election = forecast_with_miss(election_alr_trend, sigma_miss=sigma)
+    shift = data.industry_shift_share
+    print(f"horizon {horizon}w → miss sigma {sigma*100:.2f}pp; "
+          f"industry shift (pp): " + ", ".join(
+              f"{p}{shift[k]*100:+.2f}" for k, p in enumerate(PARTY_ORDER) if abs(shift[k]) > 1e-4))
+    election = forecast_with_miss(election_alr_trend, sigma_miss=sigma, industry_shift=shift)
 
     trend.to_parquet(PROCESSED_DIR / "model_trend.parquet", index=False)
     np.savez(
         PROCESSED_DIR / "forecast_samples.npz",
         shares=election, election_alr_trend=election_alr_trend,
         parties=np.array(PARTY_ORDER), election_day=str(CYCLE_2026.election_day),
-        miss_sigma=sigma, horizon_weeks=horizon,
+        miss_sigma=sigma, horizon_weeks=horizon, industry_shift=shift,
     )
     _report(trend, election, CYCLE_2026.election_day)
 

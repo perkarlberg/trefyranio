@@ -79,7 +79,10 @@ def fit_all(warmup: int = 500, samples: int = 500, force: bool = False) -> None:
                 print(f"  skip {out.name} (exists)", flush=True)
                 continue
             as_of = cycle.election_day - dt.timedelta(weeks=H) if H else None
-            data = prepare(polls, results, cycle, as_of=as_of)
+            # use_ratings=False: ratings span 2010–2022, so applying them to a
+            # past cycle leaks future results. Backtests test the uncertainty
+            # model, not the warm-start.
+            data = prepare(polls, results, cycle, as_of=as_of, use_ratings=False)
             post = fit(data, warmup=warmup, samples=samples, seed=0, num_chains=2)
             trend, election_alr_trend = summarize(post, data)
             tw = (trend.pivot(index="date", columns="party", values="mean")

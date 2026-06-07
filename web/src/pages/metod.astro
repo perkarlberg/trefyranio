@@ -22,8 +22,11 @@ import Base from '../layouts/Base.astro';
       små nettoförändringar fram till valet.</p>
 
     <h3>Varje mätinstitut kalibreras</h3>
-    <p>Institut väger olika tungt utifrån historisk träffsäkerhet, och varje instituts systematiska
-      lutning (”house effect”) skattas och justeras bort.</p>
+    <p>Institut som historiskt träffat bäst väger tyngre i sammanvägningen, och varje instituts
+      systematiska lutning (”house effect”) skattas och justeras bort — med institutets historiska
+      lutning som utgångspunkt. Utöver det korrigerar modellen för <em>branschens</em> gemensamma
+      missar: vissa partier (t.ex. SD och S) har historiskt underskattats av i stort sett alla
+      institut, och en dämpad korrigering för det läggs på valdagsprognosen.</p>
 
     <h3>Från röster till mandat</h3>
     <p>Tiotusentals simuleringar dras ur modellen. Varje simulering körs genom det riktiga valsystemet:

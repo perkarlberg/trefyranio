@@ -15,8 +15,12 @@ import pytest
 from trefyranio import model
 from trefyranio.model import (
     K,
+    KM1,
     PARTY_ORDER,
+    SHRINK_IND,
     _alr,
+    _build_house_priors,
+    _load_pollster_weights,
     _softmax_with_ref,
     forecast_with_miss,
     miss_sigma_for_horizon,
@@ -56,6 +60,56 @@ def test_miss_term_widens_spread():
     # Shares still form a valid simplex after clip + renormalize.
     assert np.allclose(wide.sum(axis=1), 1.0)
     assert (wide >= 0).all()
+
+
+def _anchor():
+    p = np.array([0.30, 0.20, 0.17, 0.08, 0.08, 0.06, 0.04, 0.04, 0.03])
+    return p / p.sum()
+
+
+def test_house_prior_debias_to_zero():
+    # A pollster whose historical lean EQUALS the field-wide industry bias has no
+    # consensus-relative lean → its de-biased ALR prior should be ~0.
+    parties = PARTY_ORDER[:-1]  # 8 Riksdag parties (ratings exclude Övr)
+    bias = {"S": -0.02, "M": 0.01, "SD": -0.015, "C": 0.0, "V": 0.012, "KD": 0.003, "MP": 0.008, "L": 0.004}
+    industry = pd.DataFrame({"party": list(bias), "bias": list(bias.values())})
+    # pollster "Same" mirrors the field; "Lean" adds +1pp on SD beyond the field.
+    rows = []
+    for party in parties:
+        rows.append(("Same", party, bias[party]))
+        rows.append(("Lean", party, bias[party] + (0.01 if party == "SD" else 0.0)))
+    he = pd.DataFrame(rows, columns=["pollster", "party", "house_effect"])
+    prior = _build_house_priors(["Same", "Lean"], _anchor(), he, industry)
+    assert prior.shape == (2, KM1)
+    assert np.allclose(prior[0], 0.0, atol=1e-9)            # mirrors field → no lean
+    sd_idx = PARTY_ORDER.index("SD") - 1                    # ALR drops the reference (S)
+    assert prior[1, sd_idx] > 0.02                          # the +1pp SD lean shows up
+    assert not np.allclose(prior[1], 0.0)
+
+
+def test_house_prior_new_entrant_zero():
+    industry = pd.DataFrame({"party": PARTY_ORDER[:-1], "bias": [0.0] * 8})
+    he = pd.DataFrame([("Old", p, 0.005) for p in PARTY_ORDER[:-1]],
+                      columns=["pollster", "party", "house_effect"])
+    prior = _build_house_priors(["Old", "BrandNew"], _anchor(), he, industry)
+    assert np.allclose(prior[1], 0.0)                       # no history → zero prior
+
+
+def test_pollster_weights_fallback():
+    ratings = pd.DataFrame({"pollster": ["A", "B"], "weight": [1.3, 0.8]})
+    w = _load_pollster_weights(["A", "New", "B"], ratings)
+    assert w.tolist() == [1.3, 1.0, 0.8]                    # new entrant → 1.0
+
+
+def test_industry_shift_lifts_understated_party():
+    # Field understates S (bias<0) → the shift must push S's election-day share UP.
+    base_alr = np.tile(_alr(_anchor()), (400, 1))
+    shift = np.zeros(K)
+    shift[PARTY_ORDER.index("S")] = SHRINK_IND * 0.02       # +shift on S
+    no_shift = forecast_with_miss(base_alr, sigma_miss=0.0, seed=3)
+    with_shift = forecast_with_miss(base_alr, sigma_miss=0.0, seed=3, industry_shift=shift)
+    assert with_shift[:, PARTY_ORDER.index("S")].mean() > no_shift[:, PARTY_ORDER.index("S")].mean()
+    assert np.allclose(with_shift.sum(axis=1), 1.0)
 
 
 @pytest.mark.skipif(

@@ -154,9 +154,10 @@ def build() -> None:
     # Use the horizon-aware miss sigma the model fit saved (not a fixed constant),
     # so the simulator's spread matches the forecast's horizon.
     sigma = float(npz["miss_sigma"]) if "miss_sigma" in npz else MISS_SIGMA
+    shift = npz["industry_shift"] if "industry_shift" in npz else None
     rng = np.random.default_rng(SEAT_DRAW_SEED)
     shares = forecast_with_miss(eat[rng.integers(0, eat.shape[0], N_SIM)],
-                                sigma_miss=sigma, seed=SEAT_DRAW_SEED)
+                                sigma_miss=sigma, seed=SEAT_DRAW_SEED, industry_shift=shift)
     seats = simulate_seats(shares, PARTY_ORDER)             # (N_SIM, 8)
 
     seat_df = seat_distribution(seats)
