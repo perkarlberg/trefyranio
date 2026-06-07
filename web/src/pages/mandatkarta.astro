@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import ValkretsMap from '../components/ValkretsMap.astro';
 import ValkretsSeats from '../components/ValkretsSeats.astro';
 const title = 'Mandat per valkrets 2026 – var kommer partiernas mandat ifrån? | Trefyranio';
 const desc = 'Var i landet kommer varje partis och blocks riksdagsmandat ifrån? Mandatfördelningen ' +
@@ -16,6 +17,11 @@ const desc = 'Var i landet kommer varje partis och blocks riksdagsmandat ifrån?
   </article>
 
   <article class="section">
+    <ValkretsMap />
+  </article>
+
+  <article class="section">
+    <h3 class="vk-h">Mandat per valkrets</h3>
     <ValkretsSeats />
   </article>
 

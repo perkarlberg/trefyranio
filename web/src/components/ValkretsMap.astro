@@ -1,0 +1,40 @@
+---
+import geo from '../data/valkrets_geo.json';
+import seats from '../data/valkrets.json';
+
+const byCode = Object.fromEntries(seats.valkrets.map((v) => [v.code, v]));
+const BLOC_VAR = { left: 'var(--bloc-left)', right: 'var(--bloc-right)', centre: 'var(--bloc-centre)' };
+const BLOC_SV = { left: 'Rödgrönt', right: 'Tidö', centre: 'Centern' };
+
+const feats = geo.valkrets.map((v) => {
+  const s = byCode[v.code] ?? { name: v.name, seats: 0, blocs: { left: 0, right: 0, centre: 0 }, parties: {} };
+  const lead = Object.entries(s.blocs).sort((a, b) => b[1] - a[1])[0][0];
+  const parts = Object.entries(s.parties).sort((a, b) => b[1] - a[1])
+    .map(([p, n]) => `${p} ${n}`).join(', ');
+  return { ...v, fill: BLOC_VAR[lead],
+    tip: `${s.name?.replace(' valkrets', '') ?? v.name} — ${s.seats} mandat\n${BLOC_SV.left} ${s.blocs.left} · ${BLOC_SV.right} ${s.blocs.right} · ${BLOC_SV.centre} ${s.blocs.centre}\n${parts}` };
+});
+---
+<figure class="vkmap">
+  <svg viewBox={geo.viewBox} role="img" aria-label="Ledande block per valkrets i den centrala prognosen">
+    {feats.map((f) => (
+      <path d={f.d} fill={f.fill} stroke="var(--bg, #fff)" stroke-width="1.5"><title>{f.tip}</title></path>
+    ))}
+  </svg>
+  <figcaption>
+    <span class="lg"><span class="sw" style="background:var(--bloc-left)"></span>Rödgrönt leder</span>
+    <span class="lg"><span class="sw" style="background:var(--bloc-right)"></span>Tidö leder</span>
+    <span class="lg"><span class="sw" style="background:var(--bloc-centre)"></span>Centern leder</span>
+    <p class="muted">Färg = blocket med flest mandat i valkretsen (centrala prognosen). Peka på en valkrets för fördelningen.</p>
+  </figcaption>
+  <style>
+    .vkmap { margin: 8px 0 4px; text-align: center; }
+    .vkmap svg { height: min(64vh, 620px); width: auto; max-width: 100%; display: inline-block; }
+    .vkmap path { transition: opacity .1s; }
+    .vkmap path:hover { opacity: .8; cursor: pointer; }
+    figcaption { margin-top: 10px; }
+    .lg { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; }
+    .sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+    figcaption .muted { font-size: 12.5px; max-width: 52ch; margin: 8px auto 0; }
+  </style>
+</figure>

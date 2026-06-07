@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 model = ["numpyro>=0.13", "jax>=0.4", "numpy>=1.24"]
+geo = ["shapely>=2.0"]   # only for make_valkrets_geo.py (occasional map ETL)
 dev = ["pytest>=7"]
 
 [project.scripts]
