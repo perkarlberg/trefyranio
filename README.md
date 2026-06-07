@@ -58,12 +58,15 @@ alone it would project to election day with false certainty (the Taleb/martingal
 trap — ±0.1pp a year out). So the real election-day error is injected as an
 explicit **polling-miss term** in share space, then propagated through the simulator.
 
-- **Calibrated, not guessed** — sized by backtesting 2018 & 2022 from polls-only
-  so interval coverage matches realized poll-vs-result error (≈88%).
+- **Calibrated, not guessed** — sized by backtesting the converged model across
+  **four cycles (2010, 2014, 2018, 2022)** from polls-only so the 80% interval
+  reaches 85% coverage against realized poll-vs-result error.
 - **Horizon-dependent** — calibrated at two horizons (election-eve and 14 weeks
-  out): `σ(H) = √(1.6² + 0.18·H) pp`, H = weeks from the last poll to election. The
-  forecast is wider far out and **tightens as the election nears** (`MISS_SIGMA_*`,
-  `miss_sigma_for_horizon` in `model.py`).
+  out): `σ(H) = √(1.50² + 0.034·H) pp` → ~1.50pp at H=0, ~1.65pp at H=14, where
+  H = weeks from the last poll to election. The forecast is wider far out and
+  **tightens as the election nears** (`MISS_SIGMA_*`, `miss_sigma_for_horizon` in
+  `model.py`). The converged model needs less added miss than the earlier
+  non-converged fit (2.25pp) — its own posterior is better calibrated.
 - **Correlated within blocs** — a factor model gives within-bloc co-movement
   (`MISS_RHO`≈0.2) so bloc-total / government-formation variance isn't understated.
 
@@ -89,10 +92,14 @@ seed-sensitive (SD ±1.5pp across seeds). Fixed by:
   `fit()`.
 
 Result: **worst election-day r-hat ≈ 1.00, ESS ~4,000.** The forecast is now
-stable across seeds. Trade-off: momentum is currently minimal — the global drift
-comes out ≈0 this cycle (the aggressive velocity momentum never actually
-converged, so its earlier "benefit" was measured on an unreliable fit). A
-convergence-safe *recent*-momentum term is future work.
+stable across seeds (and converges just as cleanly on all four backtest cycles,
+r-hat ≤ 1.004). Trade-off: momentum is minimal — the per-party drift captures
+trend, but the global drift comes out ≈0 this cycle. We tested a separate
+damped recent-momentum term (Gardner & McKenzie) against the 4-cycle backtest:
+the effect was **noise-level** (ALR RMSE 0.306 → 0.302 across all damping
+factors) and the unregularized argmax was *undamped* — an overfitting signature.
+So the live model ships **no separate momentum term**; the per-party drift is the
+only trend mechanism. A term the backtest can't justify doesn't go in.
 
 ## Electoral system (encoded in `allocator.py`)
 
@@ -153,8 +160,10 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       8-party ALR **local-level random walk + per-party drift, fixed scales**,
       Dirichlet-Multinomial likelihood, per-pollster house effects (centered),
       anchored at the 2022 result. **Converges** (multi-chain, r-hat ≈ 1.0 — see
-      Convergence) after the funnel reparam; velocity dropped (didn't converge,
-      momentum now minimal). Fits the cycle (~10 min, 4 chains) →
+      Convergence) after the funnel reparam; velocity dropped (didn't converge),
+      and a separate damped recent-momentum term was tested on the 4-cycle
+      backtest and rejected as noise-level — drift only. Fits the cycle (~10 min,
+      4 chains) →
       `model_trend.parquet` + election-day `forecast_samples.npz`. Election-day
       uncertainty is a **share-space** polling-miss term — calibrated (Phase 5),
       **horizon-dependent**, and
@@ -170,18 +179,19 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       (Right/Tidö, Left, C as unaligned kingmaker). Runs in <1s →
       `seat_forecast`, `coalition_forecast`, `government_forecast.json`,
       `seat_draws.npz`. Conditionals guarded against tiny-subsample noise.
-- [~] **Phase 5** — backtest & calibration (`backtest.py`). Refits 2018 & 2022
-      from polls-only, horizon-matched. **Calibrated `MISS_SIGMA`** (share-space,
-      horizon curve, ~88% coverage). Point MAE 0.9–1.5pp. Found & fixed: the miss
-      belongs in share space, not ALR. Within-bloc miss correlation as a factor
-      (`MISS_RHO`≈0.2). ⚠️ The earlier "momentum thesis confirmed (velocity)"
-      result was measured on the **non-converged** model and is superseded
-      (velocity since dropped). **MISS_SIGMA should be re-calibrated on the
-      converged model** (TODO).
-      - [ ] **Longer backtest: add 2010 & 2014 (4 cycles)** — to calibrate
-            `MISS_SIGMA` more tightly and estimate `MISS_RHO` (within-bloc miss
-            correlation) from data instead of assuming it; plus horizon-dependent
-            `MISS_SIGMA`.
+- [x] **Phase 5** — backtest & calibration (`backtest.py`). Refits the converged
+      model across **four cycles (2010, 2014, 2018, 2022)** from polls-only,
+      horizon-matched at H=0 and H=14. **Calibrated `MISS_SIGMA`** (share-space,
+      coverage-cal to 85%, σ(H) curve ~1.50→1.65pp). Point MAE 0.6–1.5pp across
+      cycles. The miss belongs in share space, not ALR; within-bloc correlation as
+      a factor (`MISS_RHO`≈0.2). Damped recent-momentum tested on all 4 cycles and
+      rejected (noise-level, overfit argmax) → drift-only. ⚠️ The earlier
+      "momentum thesis confirmed (velocity)" result was measured on the
+      **non-converged** model and is superseded.
+      - [ ] **6-cycle backtest (2002, 2006)** — more power to pin `MISS_SIGMA`
+            and estimate `MISS_RHO` from data, with pre-2010 caveats (SD not in
+            riksdag, FP=L). Would also let a momentum term be re-tested with more
+            statistical power.
 - [~] **Phase 6** — Astro webapp (Swedish, prime-era 538 look) + Cloudflare
       Pages + local recompute/publish.
   - [x] `parties.py` (verified palette), `web_export.py` (→ `web/src/data/*.json`:
@@ -235,7 +245,7 @@ python -m trefyranio.simulate             # seats → government → coalitions
 python -m trefyranio.web_export           # → web/src/data/*.json
 ./deploy.sh                               # export + astro build + Firebase deploy
 # full refresh + publish in one go:  ./daily_update.sh
-# calibration (occasional):          python -m trefyranio.backtest all   # ~18 min
+# calibration (occasional):          python -m trefyranio.backtest all   # ~25 min (8 fits, cached)
 ```
 
 **Live:** https://trefyranio.web.app (Firebase Hosting, project `trefyranio`).

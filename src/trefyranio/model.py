@@ -46,9 +46,10 @@ KM1 = K - 1
 
 # Riksdagsval election days (second Sunday of September).
 ELECTION_DATES = {
-    2010: dt.date(2010, 9, 19), 2014: dt.date(2014, 9, 14),
-    2018: dt.date(2018, 9, 9), 2022: dt.date(2022, 9, 11),
-    2026: dt.date(2026, 9, 13),
+    1998: dt.date(1998, 9, 20), 2002: dt.date(2002, 9, 15),
+    2006: dt.date(2006, 9, 17), 2010: dt.date(2010, 9, 19),
+    2014: dt.date(2014, 9, 14), 2018: dt.date(2018, 9, 9),
+    2022: dt.date(2022, 9, 11), 2026: dt.date(2026, 9, 13),
 }
 
 
@@ -85,10 +86,14 @@ CYCLE_2026 = cycle_for(2026)
 # is deliberate future work; see README "Uncertainty model".
 #
 # HORIZON-DEPENDENT: calibrated at TWO horizons (election-eve H≈0 and H=14w) on
-# 2018 & 2022 → a variance-accumulation curve. H = weeks from the last poll to
-# election; uncertainty grows with H (the forecast tightens as the election nears).
-MISS_SIGMA_FLOOR = 0.016        # ≈1.6pp election-eve (H≈0), coverage-cal
-MISS_SIGMA_VAR_SLOPE = 1.79e-5  # share² added per week (from the 0→14w calibration)
+# the converged model across FOUR cycles (2010/2014/2018/2022) → a variance-
+# accumulation curve. H = weeks from the last poll to election; uncertainty grows
+# with H (the forecast tightens as the election nears). Coverage-calibrated (85%
+# of the 80% interval) rather than moment-matched: with 4 cycles the realized
+# errors are heavy-tailed, and the converged model's own posterior already widens
+# with horizon, so moment-match under-covers far out (66% at H=14).
+MISS_SIGMA_FLOOR = 0.015        # 1.50pp election-eve (H≈0), coverage-cal
+MISS_SIGMA_VAR_SLOPE = 3.375e-6  # share² added per week → 1.65pp at H=14
 
 
 def miss_sigma_for_horizon(weeks: float) -> float:
