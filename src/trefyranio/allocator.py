@@ -110,6 +110,64 @@ def allocate_seats(
     return seats
 
 
+def _divisor_for(weights: list[float], target: int) -> float:
+    """Smallest-error divisor d such that sum(round(w/d)) == target, by
+    Sainte-Lague rounding (round-half-up). Binary search; seats decrease in d."""
+    import numpy as np
+
+    w = np.asarray(weights, dtype=float)
+    if target <= 0 or w.sum() == 0:
+        return float("inf")
+    lo, hi = 1e-12, float(w.sum()) * 2
+    for _ in range(100):
+        d = (lo + hi) / 2
+        s = int(np.floor(w / d + 0.5).sum())
+        if s == target:
+            return d
+        if s > target:
+            lo = d
+        else:
+            hi = d
+    return (lo + hi) / 2
+
+
+def biproportional(
+    weights, row_targets, col_targets, max_iter: int = 1000,
+):
+    """Biproportional apportionment (Balinski–Demange / Pukelsheim): a seat
+    matrix M[i][j] whose row sums equal ``row_targets`` and column sums equal
+    ``col_targets``, with seats placed in proportion to ``weights`` (e.g. votes).
+
+    Used for the per-valkrets seat map: rows = constituencies (their seat
+    budgets), columns = parties (their EXACT national seat totals), weights =
+    per-valkrets votes. This makes the map's per-party totals match the headline
+    forecast to the seat while distributing each party's seats to the
+    constituencies where it is strong. Sweden's actual fixed+leveling rule is not
+    exactly biproportional, so this reproduces real per-valkrets seats to within a
+    seat or two — fine for a visualization, and exact on both margins.
+
+    Alternating divisor scaling: hold row divisors, fit column divisors to hit the
+    column targets; then hold columns, fit rows; repeat until both margins match.
+    """
+    import numpy as np
+
+    V = np.asarray(weights, dtype=float)
+    row_t = np.asarray(row_targets, dtype=int)
+    col_t = np.asarray(col_targets, dtype=int)
+    nr, nc = V.shape
+    rd, cd = np.ones(nr), np.ones(nc)
+    M = np.zeros((nr, nc), dtype=int)
+    for _ in range(max_iter):
+        for j in range(nc):
+            cd[j] = _divisor_for(V[:, j] / rd, int(col_t[j]))
+        for i in range(nr):
+            rd[i] = _divisor_for(V[i, :] / cd, int(row_t[i]))
+        M = np.floor(V / rd[:, None] / cd[None, :] + 0.5).astype(int)
+        if (M.sum(1) == row_t).all() and (M.sum(0) == col_t).all():
+            break
+    return M
+
+
 @dataclass
 class NationalResult:
     """National seat allocation plus the threshold decision per party."""

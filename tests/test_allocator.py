@@ -102,6 +102,31 @@ def test_national_proportional_exact_under_current_rules(year):
         )
 
 
+def test_biproportional_matches_both_margins_and_reproduces_2022():
+    """Biproportional apportionment must hit BOTH margins exactly and closely
+    reproduce the real 2022 per-valkrets seats (the map's fidelity guarantee)."""
+    import numpy as np
+    import pandas as pd
+    from trefyranio.allocator import biproportional
+
+    rv = pd.read_parquet(PROCESSED_DIR / "results_valkrets.parquet")
+    sa = pd.read_parquet(PROCESSED_DIR / "seats_actual.parquet")
+    RIKS = ["S", "M", "SD", "C", "V", "KD", "MP", "L"]
+    base = rv[rv.election_year == 2022]
+    sav = sa[(sa.election_year == 2022) & (sa.region_code != "VR00")]
+    vcodes = sorted(sav.region_code.unique())
+    V = np.array([[base[(base.valkrets_code == v) & (base.party == p)].votes.sum()
+                   for p in RIKS] for v in vcodes], dtype=float)
+    actual = np.array([[int(sav[(sav.region_code == v) & (sav.party == p)].seats.sum())
+                        for p in RIKS] for v in vcodes])
+    row_t = actual.sum(1)
+    col_t = actual.sum(0)
+    M = biproportional(V, row_t, col_t)
+    assert (M.sum(1) == row_t).all()          # valkrets budgets exact
+    assert (M.sum(0) == col_t).all()          # national party totals exact
+    assert np.abs(M - actual).sum() <= 12     # close to the real allocation (~8/349)
+
+
 def test_other_bucket_excluded_from_seats():
     """A lumped 'other' total above 4% must win no seats (it's many
     sub-threshold parties), but still counts toward the threshold denominator."""

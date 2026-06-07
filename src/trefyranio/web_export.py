@@ -202,6 +202,15 @@ def build_seat_draws() -> dict:
     }
 
 
+def build_valkrets() -> dict:
+    """Per-valkrets seat origins (map) from the central forecast shares."""
+    from trefyranio import valkrets
+    npz = np.load(PROCESSED_DIR / "forecast_samples.npz", allow_pickle=True)
+    central = npz["shares"].mean(0)            # (K,) in PARTY_ORDER
+    national = {p: float(central[k]) for k, p in enumerate(PARTY_ORDER)}
+    return valkrets.build(national)
+
+
 def build() -> None:
     polls = pd.read_parquet(PROCESSED_DIR / "polls.parquet")
     polls["date"] = polls["field_end"].fillna(polls["pub_date"])
@@ -230,6 +239,7 @@ def build() -> None:
         WEB_DATA_DIR / "forecast.json": build_forecast(as_of, weeks_to_go, counts, latest_poll),
         WEB_DATA_DIR / "trend.json": build_trend(),
         WEB_DATA_DIR / "polls.json": build_polls_detail(),
+        WEB_DATA_DIR / "valkrets.json": build_valkrets(),
         WEB_PUBLIC_DIR / "seat_draws.json": build_seat_draws(),
     }
     for path, obj in outputs.items():
