@@ -62,10 +62,22 @@ the backtest rejects it (see "Fundamentals prior" below).)
 government-formation as the headline output; a **field-bias correction** from the
 2010–2022 final-poll record — which shows the largest systematic industry misses
 are an **understated S (~2.2pp)** and **overstated V/MP (~1pp)**, with SD's
-final-poll bias actually small (~0.2pp) once pollsters adjusted; the Novus 2023
-phone→web methodology break; and flagging *stödröstning* (vote-lending to keep
-small allies above 4%), which polls capture poorly. The correction is applied at
-30% strength (4 elections is noisy; pollsters partly adapt).
+final-poll bias actually small (~0.2pp) once pollsters adjusted (correction applied
+at 30% strength — 4 elections is noisy, pollsters partly adapt); and the Novus 2023
+phone→web methodology break.
+
+**On *stödröstning* (tactical vote-lending).** A reasonable worry is that lending
+votes to keep a small ally above 4% systematically rescues near-threshold parties
+beyond their polls — the exact quantity we headline. We checked: among the near-
+threshold cases (final-poll share 3–5.5%) in 2010–2022 there is **no systematic
+overperformance** (mean actual−poll ≈ −0.25pp; the canonical L-2022 case got 4.6%
+vs polling 5.5% — it *underperformed* its final poll and survived only because it
+already polled above 4%). The reading: by the final stretch, lending intentions are
+**already priced into the polls**, so there's no robust residual mean effect to add
+(adding one would fit noise, like the rejected momentum/fundamentals terms). What
+matters — threshold *uncertainty* — is already carried: near-threshold parties get
+the full election-day spread (the `FWD_FLOOR_PQ` hybrid), so their 4%-survival is an
+honest probability, not a point call.
 
 ## Uncertainty model (model-carried)
 
