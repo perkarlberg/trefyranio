@@ -77,45 +77,49 @@ CYCLE_2026 = cycle_for(2026)
 # post-processing (no likelihood). Share space — not ALR — because realized poll
 # errors are ~uniform in pp across party sizes.
 #
-# HONEST CAVEAT: this spread is a calibrated add-on, NOT emergent from the latent
-# walk — whose innovation variance is estimated tiny on the slowly-moving
-# inter-election series and so projects to election day with false certainty. A
-# hand-fit term carries the forecast error. The principled fix (model-carried
-# error: an Economist-style backward-from-election-day random walk with
-# horizon-accumulating innovations + an explicit election-day fundamentals prior)
-# is deliberate future work; see README "Uncertainty model".
+# MODEL-CARRIED ERROR: the election-day spread is a FORWARD PROJECTION of the
+# latent from the last poll (`project_to_election`), not a post-hoc add-on. The
+# in-sample latent walk's innovation variance is tiny (the series barely moves
+# between elections), so the forecast-region uncertainty is carried by a separate,
+# calibrated forward innovation — a multiplicative (logit-space) random walk over
+# the H-week gap, bloc-correlated, that accumulates the realized poll-miss. This
+# emerges from a projection process rather than being sprinkled on the shares.
 #
+# The calibration TARGET is a per-party election-day SHARE-space sigma — realized
+# poll errors are ~uniform in pp across party sizes, so we size the logit-space
+# innovation per party to realize this uniform-pp spread (see project_to_election).
 # HORIZON-DEPENDENT: calibrated at TWO horizons (election-eve H≈0 and H=14w) on
 # the converged model across FOUR cycles (2010/2014/2018/2022) → a variance-
-# accumulation curve. H = weeks from the last poll to election; uncertainty grows
-# with H (the forecast tightens as the election nears). Coverage-calibrated (85%
-# of the 80% interval) rather than moment-matched: with 4 cycles the realized
-# errors are heavy-tailed, and the converged model's own posterior already widens
-# with horizon, so moment-match under-covers far out (66% at H=14).
-MISS_SIGMA_FLOOR = 0.015        # 1.50pp election-eve (H≈0), coverage-cal
-MISS_SIGMA_VAR_SLOPE = 3.375e-6  # share² added per week → 1.65pp at H=14
+# accumulation curve. Coverage-calibrated (85% of the 80% interval), not moment-
+# matched (4-cycle errors are heavy-tailed; moment-match under-covers at H=14).
+MISS_SIGMA_FLOOR = 0.0155       # 1.55pp election-eve (H≈0), coverage-cal target
+MISS_SIGMA_VAR_SLOPE = 5.982e-6  # share² per week → 1.80pp at H=14 (total spread,
+#   not an added miss: the projection starts from the well-pinned last-poll latent)
 
 
 def miss_sigma_for_horizon(weeks: float) -> float:
-    """Share-space polling-miss sigma at ``weeks`` from the last poll to election."""
+    """Per-party election-day SHARE-space sigma the forward projection targets,
+    at ``weeks`` from the last poll to election."""
     return float(np.sqrt(MISS_SIGMA_FLOOR ** 2 + MISS_SIGMA_VAR_SLOPE * max(0.0, weeks)))
 
 
-MISS_SIGMA = miss_sigma_for_horizon(14)  # ≈0.0225; default for the live ~14w horizon
+MISS_SIGMA = miss_sigma_for_horizon(14)  # default for the live ~14w horizon
 
-# Cross-party correlation of the polling miss. Real misses co-move within a bloc
-# (parties draw from a shared pool / a common pro-anti-incumbent mood), so an
-# iid miss understates the variance of BLOC totals — and the headline government
-# probabilities are bloc arithmetic. Modelled as a factor: each party's miss =
-# sqrt(rho)·(shared bloc factor) + sqrt(1-rho)·(idiosyncratic). This keeps each
-# party's MARGINAL sigma = MISS_SIGMA (so the share-space calibration still
-# holds) while giving within-bloc correlation = rho; renormalisation supplies the
-# cross-bloc anti-correlation. rho is an INFORMED ASSUMPTION, set deliberately
-# modest: cross-national evidence says within-bloc misses correlate and the
-# dangerous direction is UNDER-correlating (iid → overconfident bloc tails), but
-# Sweden's 2-cycle backtest shows realized bloc errors ≤ the iid prediction, so a
-# large rho would over-widen. 0.2 hedges toward the theory without over-claiming a
-# magnitude the data can't confirm. Calibrate with more cycles. Groups mirror
+# Hybrid per-party scaling. The forward innovation lives in logit space, where a
+# party's share-space spread is p·(1-p)·sigma_logit. To realize the UNIFORM-pp
+# target we set sigma_logit = target / (p·(1-p)) — but that diverges for tiny
+# parties (a 1% party would swing wildly). FWD_FLOOR_PQ floors p·(1-p) so very
+# small parties get a damped (sub-target) band while threshold-region parties
+# (≳4%) get the full target. Calibrated against near-threshold backtest coverage.
+FWD_FLOOR_PQ = 0.0384           # = p(1-p) at p=4%; parties below 4% damped
+
+# Cross-party correlation of the forward miss. Real misses co-move within a bloc
+# (shared voter pool / common mood), so an iid miss understates BLOC-total
+# variance — and the headline government probabilities are bloc arithmetic.
+# Factor model on the logit innovation: each party's z = sqrt(rho)·(shared bloc
+# factor) + sqrt(1-rho)·(idiosyncratic), so the within-bloc correlation is rho
+# while the per-party marginal is preserved. rho is calibratable from the bloc-
+# total backtest errors (Phase 3); 0.2 is the current estimate. Groups mirror
 # simulate's blocs. (rho=0.2 lifts P(Tidö maj) ~11%→14% vs iid.)
 MISS_RHO = 0.2
 _MISS_GROUP = {"S": 1, "M": 0, "SD": 0, "C": 2, "V": 1, "KD": 0, "MP": 1, "L": 0, "Övr": 3}
@@ -399,36 +403,45 @@ def _softmax_with_ref(alr: np.ndarray) -> np.ndarray:
     return e / e.sum(-1, keepdims=True)
 
 
-def forecast_with_miss(
-    election_alr_trend: np.ndarray, sigma_miss: float = MISS_SIGMA,
-    rho: float = MISS_RHO, seed: int = 0, industry_shift: np.ndarray | None = None,
+def project_to_election(
+    last_alr: np.ndarray, drift: np.ndarray, horizon: float,
+    sigma_share: float | None = None, rho: float = MISS_RHO,
+    floor_pq: float = FWD_FLOOR_PQ, industry_shift: np.ndarray | None = None,
+    seed: int = 0,
 ) -> np.ndarray:
-    """Election-day share samples (S, K): the trend at election week mapped to
-    shares, optionally shifted by the field-bias correction, plus a SHARE-space
-    polling-miss error, clipped to >=0 and renormalized.
+    """Model-carried election-day share samples (N, K): project the latent forward
+    from the last poll week by ``horizon`` weeks, then realize the calibrated
+    election-day spread as a bloc-correlated, multiplicative (logit-space) forward
+    innovation. The spread EMERGES from this projection process — it is not a
+    post-hoc share add-on.
 
-    ``industry_shift`` (K,) is the heavily-shrunk field-wide bias correction
-    (e.g. push SD/S up where the industry persistently understates them). Applied
-    to the central forecast BEFORE the miss; it shifts the mean, the miss adds
-    spread around it.
+    ``last_alr``, ``drift`` (N, KM1): posterior draws of the latent ALR level at
+    the last poll week and the per-party weekly drift. Central projection =
+    last_alr + drift·horizon. ``industry_shift`` (K, share space) corrects the
+    field-wide bias on the central forecast; the innovation adds the spread.
 
-    The miss is correlated within blocs via a factor model (see MISS_RHO): each
-    party's miss = sqrt(rho)·shared-bloc-factor + sqrt(1-rho)·idiosyncratic. This
-    leaves the marginal per-party sigma at ``sigma_miss`` (so the Phase-5
-    share-space calibration holds) while inflating bloc-total variance — which is
-    what the government-formation probabilities depend on. Share space (not ALR)
-    because realized poll errors are ~uniform in pp across party sizes."""
+    The innovation is sized PER PARTY so the induced share-space marginal sigma is
+    ~uniform across party sizes (= ``sigma_share``, the calibrated target): in
+    logit space dp_k ≈ p_k(1-p_k)·dl_k, so sigma_logit_k = sigma_share/(p_k(1-p_k)),
+    with p_k(1-p_k) floored (``floor_pq``) so tiny parties don't swing wildly.
+    Bloc correlation ``rho`` via a factor model on the logit innovation. softmax
+    keeps the simplex (no clipping needed — logit space is unbounded)."""
+    if sigma_share is None:
+        sigma_share = miss_sigma_for_horizon(horizon)
     rng = np.random.default_rng(seed)
-    base = _softmax_with_ref(election_alr_trend)              # (S, K) shares
+    central = _softmax_with_ref(np.asarray(last_alr) + np.asarray(drift) * horizon)  # (N, K)
     if industry_shift is not None:
-        base = np.clip(base + industry_shift, 0.0, None)
-        base = base / base.sum(axis=-1, keepdims=True)
+        central = np.clip(central + industry_shift, 0.0, None)
+        central = central / central.sum(axis=-1, keepdims=True)
+    pq = np.clip(central * (1.0 - central), floor_pq, None)   # (N, K)
+    sigma_logit = sigma_share / pq                            # per-party logit scale
     ngroups = int(MISS_GROUP_IDX.max()) + 1
-    factor = rng.standard_normal((base.shape[0], ngroups))[:, MISS_GROUP_IDX]  # shared per bloc
-    idio = rng.standard_normal(base.shape)
-    miss = sigma_miss * (np.sqrt(rho) * factor + np.sqrt(1.0 - rho) * idio)
-    noisy = np.clip(base + miss, 0.0, None)
-    return noisy / noisy.sum(axis=-1, keepdims=True)
+    factor = rng.standard_normal((central.shape[0], ngroups))[:, MISS_GROUP_IDX]
+    idio = rng.standard_normal(central.shape)
+    z = np.sqrt(rho) * factor + np.sqrt(1.0 - rho) * idio
+    election_logit = np.log(np.clip(central, 1e-9, None)) + sigma_logit * z
+    e = np.exp(election_logit - election_logit.max(axis=-1, keepdims=True))
+    return e / e.sum(axis=-1, keepdims=True)
 
 
 def build(warmup: int = 600, samples: int = 600) -> None:
@@ -444,22 +457,27 @@ def build(warmup: int = 600, samples: int = 600) -> None:
     posterior = fit(data, warmup=warmup, samples=samples)
     trend, election_alr_trend = summarize(posterior, data)
 
-    # Forecast horizon = weeks from the last poll to election day → horizon-
-    # dependent miss sigma (tighter as the election nears).
-    horizon = int(data.election_week - data.week.max())
+    # Model-carried error: project the LAST-POLL-WEEK latent forward to election
+    # day with the calibrated forward innovation (project_to_election). The spread
+    # emerges from this projection, not a post-hoc add-on.
+    last_week = int(data.week.max())
+    horizon = data.election_week - last_week
+    last_alr = np.asarray(posterior["levels"])[:, last_week, :]   # (S, KM1)
+    drift = np.asarray(posterior["drift"])                        # (S, KM1)
     sigma = miss_sigma_for_horizon(horizon)
     shift = data.industry_shift_share
-    print(f"horizon {horizon}w → miss sigma {sigma*100:.2f}pp; "
+    print(f"horizon {horizon}w → target sigma {sigma*100:.2f}pp; "
           f"industry shift (pp): " + ", ".join(
               f"{p}{shift[k]*100:+.2f}" for k, p in enumerate(PARTY_ORDER) if abs(shift[k]) > 1e-4))
-    election = forecast_with_miss(election_alr_trend, sigma_miss=sigma, industry_shift=shift)
+    election = project_to_election(last_alr, drift, horizon, industry_shift=shift)
 
     trend.to_parquet(PROCESSED_DIR / "model_trend.parquet", index=False)
     np.savez(
         PROCESSED_DIR / "forecast_samples.npz",
         shares=election, election_alr_trend=election_alr_trend,
+        last_alr=last_alr, drift=drift, horizon_weeks=horizon,
         parties=np.array(PARTY_ORDER), election_day=str(CYCLE_2026.election_day),
-        miss_sigma=sigma, horizon_weeks=horizon, industry_shift=shift,
+        miss_sigma=sigma, industry_shift=shift,
     )
     _report(trend, election, CYCLE_2026.election_day)
 

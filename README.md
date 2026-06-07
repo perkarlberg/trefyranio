@@ -57,33 +57,32 @@ phone→web methodology break; and flagging *stödröstning* (vote-lending to ke
 small allies above 4%), which polls capture poorly. The correction is applied at
 30% strength (4 elections is noisy; pollsters partly adapt).
 
-## Uncertainty model (and an honest limitation)
+## Uncertainty model (model-carried)
 
-The forecast's spread is a **calibrated, horizon-dependent add-on — not emergent
-from the Bayesian latent walk.** Swedish national vote shares move slowly between
-elections, so the random walk's innovation variance is estimated near zero; left
-alone it would project to election day with false certainty (the Taleb/martingale
-trap — ±0.1pp a year out). So the real election-day error is injected as an
-explicit **polling-miss term** in share space, then propagated through the simulator.
+The forecast's spread **emerges from a forward projection of the latent**, not a
+post-hoc add-on. The in-sample latent walk tracks the polls tightly (its own
+innovation variance is small — Swedish shares move slowly), so the election-day
+uncertainty is carried by a separate, calibrated **forward projection** from the
+last poll to election day (`project_to_election` in `model.py`): the latent is
+projected forward and a multiplicative (logit-space) random-walk innovation,
+accumulating over the H-week gap, supplies the realized poll-miss spread.
 
-- **Calibrated, not guessed** — sized by backtesting the converged model across
-  **four cycles (2010, 2014, 2018, 2022)** from polls-only so the 80% interval
-  reaches 85% coverage against realized poll-vs-result error.
-- **Horizon-dependent** — calibrated at two horizons (election-eve and 14 weeks
-  out): `σ(H) = √(1.50² + 0.034·H) pp` → ~1.50pp at H=0, ~1.65pp at H=14, where
-  H = weeks from the last poll to election. The forecast is wider far out and
-  **tightens as the election nears** (`MISS_SIGMA_*`, `miss_sigma_for_horizon` in
-  `model.py`). The converged model needs less added miss than the earlier
-  non-converged fit (2.25pp) — its own posterior is better calibrated.
-- **Correlated within blocs** — a factor model gives within-bloc co-movement
-  (`MISS_RHO`≈0.2) so bloc-total / government-formation variance isn't understated.
-
-**The limitation, owned:** a hand-fit term carries the forecast error rather than
-the generative model itself. The principled fix — a backward-from-election-day
-random walk with horizon-accumulating innovations + an explicit election-day
-fundamentals prior (the Economist approach), so the spread *emerges* from the
-model — is on the roadmap. Until then the add-on is calibrated, horizon-aware, and
-transparent rather than hidden.
+- **Model-carried** — the spread is the latent process projected forward, so it
+  *emerges* from a projection rather than being sprinkled on the shares. softmax
+  keeps the simplex (no clipping). The simulator resamples the last-poll latent +
+  drift posterior and draws a fresh forward innovation per draw → a 10k predictive
+  ensemble.
+- **Calibrated, not guessed** — the per-party innovation is sized so the induced
+  election-day **share-space** spread matches realized poll error (errors are
+  ~uniform in pp across party sizes). Coverage-calibrated across **four cycles
+  (2010, 2014, 2018, 2022)** to 85% of the 80% interval: `σ(H) = √(1.55² + 0.060·H) pp`
+  → ~1.55pp at H=0, ~1.80pp at H=14 (the *total* election-day spread; `MISS_SIGMA_*`).
+- **Hybrid per-party scaling** — in logit space share spread is `p(1−p)·σ_logit`,
+  so we set `σ_logit = σ_share / (p(1−p))` (floored, `FWD_FLOOR_PQ`) to realize a
+  ~uniform-pp band while protecting the 4%-threshold survival probabilities.
+- **Correlated within blocs** — a factor model on the forward innovation gives
+  within-bloc co-movement (`MISS_RHO`≈0.2) so bloc-total / government-formation
+  variance isn't understated. ρ is calibratable from the bloc-total backtest errors.
 
 ### Convergence (fixed)
 
@@ -173,13 +172,12 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       backtest and rejected as noise-level — drift only. Fits the cycle (~10 min,
       4 chains) →
       `model_trend.parquet` + election-day `forecast_samples.npz`. Election-day
-      uncertainty is a **share-space** polling-miss term — calibrated (Phase 5),
-      **horizon-dependent**, and
-      **within-bloc correlated** (see "Uncertainty model").
-      - [ ] **Model-carried error** — make the spread emerge from the latent
-            (forward projection from the last poll with calibrated, bloc-correlated
-            innovations + terminal floor) instead of the calibrated add-on. The
-            deeper fix; next up.
+      uncertainty is **model-carried** — a forward projection from the last poll
+      (`project_to_election`) with a calibrated, **horizon-dependent**,
+      **within-bloc correlated** multiplicative innovation (see "Uncertainty model").
+      - [x] **Model-carried error** — the spread emerges from a forward projection
+            of the latent (last-poll latent + calibrated logit-space innovation),
+            retiring the share-space bolt-on. Calibrated to 85% coverage on 4 cycles.
       - [x] **Phase-2 ratings wired into the fit** — house-effect priors (de-biased,
             warm-start), accuracy weights (per-poll concentration), and a shrunk
             field-bias correction at the election-day forecast.

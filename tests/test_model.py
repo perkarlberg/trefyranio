@@ -22,17 +22,17 @@ from trefyranio.model import (
     _build_house_priors,
     _load_pollster_weights,
     _softmax_with_ref,
-    forecast_with_miss,
     miss_sigma_for_horizon,
+    project_to_election,
 )
 
 
 def test_miss_sigma_grows_with_horizon():
-    # Tighter near the election, wider far out. Coverage-calibrated on the
-    # converged model across 4 cycles: ~1.50pp at H=0, ~1.65pp at the 14-week point.
+    # Tighter near the election, wider far out. Model-carried calibration on the
+    # 4-cycle forward projection: ~1.55pp at H=0, ~1.80pp at the 14-week point.
     assert miss_sigma_for_horizon(0) < miss_sigma_for_horizon(8) < miss_sigma_for_horizon(20)
-    assert miss_sigma_for_horizon(14) == pytest.approx(0.0165, abs=2e-3)
-    assert miss_sigma_for_horizon(0) == pytest.approx(0.015, abs=1e-3)
+    assert miss_sigma_for_horizon(14) == pytest.approx(0.018, abs=2e-3)
+    assert miss_sigma_for_horizon(0) == pytest.approx(0.0155, abs=1e-3)
 
 
 def test_alr_softmax_roundtrip():
@@ -49,17 +49,46 @@ def test_softmax_sums_to_one():
     assert np.allclose(shares.sum(axis=1), 1.0)
 
 
-def test_miss_term_widens_spread():
-    # A near-degenerate trend (tiny posterior spread) at one point.
-    base = np.tile(_alr(np.full(K, 1 / K)), (500, 1))
-    base += np.random.default_rng(1).normal(0, 0.002, base.shape)
-    tight = _softmax_with_ref(base)
-    wide = forecast_with_miss(base, sigma_miss=0.02, seed=1)  # 2pp share-space miss
-    # Every party's election-day spread grows once the miss error is added.
-    assert (wide.std(axis=0) > tight.std(axis=0)).all()
-    # Shares still form a valid simplex after clip + renormalize.
-    assert np.allclose(wide.sum(axis=1), 1.0)
-    assert (wide >= 0).all()
+def test_projection_widens_and_grows_with_horizon():
+    # A near-degenerate last-poll latent (tiny posterior spread); zero drift.
+    last = np.tile(_alr(np.full(K, 1 / K)), (4000, 1))
+    last += np.random.default_rng(1).normal(0, 0.002, last.shape)
+    drift = np.zeros_like(last)
+    tight = _softmax_with_ref(last)
+    near = project_to_election(last, drift, horizon=0, seed=1)
+    far = project_to_election(last, drift, horizon=20, seed=1)
+    # The forward innovation widens the spread, and more so at a longer horizon.
+    assert (far.std(axis=0) > near.std(axis=0)).all()
+    assert (near.std(axis=0) > tight.std(axis=0)).all()
+    # softmax keeps a valid simplex — no clipping needed.
+    assert np.allclose(far.sum(axis=1), 1.0)
+    assert (far >= 0).all()
+
+
+def test_projection_marginal_is_near_uniform_pp():
+    # The per-party logit scaling targets a ~uniform share-space sigma. Build a
+    # spread of party sizes well above the floor and check marginal SDs cluster.
+    shares = np.array([0.32, 0.20, 0.17, 0.09, 0.08, 0.06, 0.05, 0.02, 0.01])
+    shares = shares / shares.sum()
+    last = np.tile(_alr(shares), (8000, 1))
+    out = project_to_election(last, np.zeros_like(last), horizon=14, rho=0.0, seed=2)
+    target = miss_sigma_for_horizon(14)
+    # Parties comfortably above the 4% floor should sit near the target sigma.
+    big = [i for i, p in enumerate(shares) if 0.05 < p < 0.5]
+    sds = out.std(axis=0)[big]
+    assert np.all(np.abs(sds - target) < 0.6 * target)  # within ~60% of uniform target
+
+
+def test_projection_bloc_correlation_inflates_bloc_variance():
+    shares = np.array([0.30, 0.20, 0.18, 0.08, 0.08, 0.06, 0.05, 0.03, 0.02])
+    shares = shares / shares.sum()
+    last = np.tile(_alr(shares), (8000, 1))
+    drift = np.zeros_like(last)
+    right = [PARTY_ORDER.index(p) for p in ("M", "SD", "KD", "L")]  # one bloc
+    iid = project_to_election(last, drift, 14, rho=0.0, seed=5)
+    cor = project_to_election(last, drift, 14, rho=0.5, seed=5)
+    # Correlated within-bloc misses inflate the bloc-total variance vs iid.
+    assert cor[:, right].sum(1).std() > iid[:, right].sum(1).std()
 
 
 def _anchor():
@@ -103,11 +132,12 @@ def test_pollster_weights_fallback():
 
 def test_industry_shift_lifts_understated_party():
     # Field understates S (bias<0) → the shift must push S's election-day share UP.
-    base_alr = np.tile(_alr(_anchor()), (400, 1))
+    last = np.tile(_alr(_anchor()), (400, 1))
+    drift = np.zeros_like(last)
     shift = np.zeros(K)
     shift[PARTY_ORDER.index("S")] = SHRINK_IND * 0.02       # +shift on S
-    no_shift = forecast_with_miss(base_alr, sigma_miss=0.0, seed=3)
-    with_shift = forecast_with_miss(base_alr, sigma_miss=0.0, seed=3, industry_shift=shift)
+    no_shift = project_to_election(last, drift, horizon=14, seed=3)
+    with_shift = project_to_election(last, drift, horizon=14, seed=3, industry_shift=shift)
     assert with_shift[:, PARTY_ORDER.index("S")].mean() > no_shift[:, PARTY_ORDER.index("S")].mean()
     assert np.allclose(with_shift.sum(axis=1), 1.0)
 

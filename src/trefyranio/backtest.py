@@ -36,13 +36,17 @@ import numpy as np
 import pandas as pd
 
 from trefyranio.model import (
+    FWD_FLOOR_PQ,
+    MISS_RHO,
     PARTY_ORDER,
     PROCESSED_DIR,
     _alr,
     _softmax_with_ref,
     cycle_for,
     fit,
+    miss_sigma_for_horizon,
     prepare,
+    project_to_election,
     summarize,
 )
 
@@ -87,13 +91,18 @@ def fit_all(warmup: int = 500, samples: int = 500, force: bool = False) -> None:
             trend, election_alr_trend = summarize(post, data)
             tw = (trend.pivot(index="date", columns="party", values="mean")
                   .reindex(columns=PARTY_ORDER).to_numpy())
+            last_week = int(data.week.max())
             np.savez(
                 out,
                 election_alr_trend=election_alr_trend,
                 trend_mean=tw,
                 actual=actual_shares(results, year),
                 election_week=int(data.election_week),
-                last_week=int(data.week.max()),
+                last_week=last_week,
+                # Model-carried calibration inputs: the last-poll-week latent + drift
+                # that project_to_election projects forward.
+                last_alr=np.asarray(post["levels"])[:, last_week, :],
+                drift=np.asarray(post["drift"]),
             )
             print(f"  fit {year} H={H}: {len(data.counts)} polls "
                   f"(last wk {int(data.week.max())}/{data.election_week}) → {out.name}",
@@ -104,55 +113,51 @@ def _load(year: int, H: int):
     return np.load(_path(year, H), allow_pickle=True)
 
 
-def miss_from_moments(errs: np.ndarray, sd_trend: np.ndarray) -> float:
-    """Added-variance moment match: size the miss so total predictive variance
-    (trend variance + miss²) equals realized squared error. Clamped at 0."""
-    return float(np.sqrt(max(0.0, (errs ** 2).mean() - (sd_trend ** 2).mean())))
+# --- Model-carried calibration: tune the forward projection, not an added miss.
+# project_to_election starts from the well-pinned LAST-POLL-WEEK latent, so
+# sigma_share is the TOTAL election-day predictive share-space sigma (the thing
+# that should match realized error), not a miss added on top of a latent spread.
+
+def _project(d, H: int, sigma: float, floor_pq: float, rho: float):
+    """Election-day share samples (S, K) for a cached cycle, via the forward
+    projection at an explicit sigma_share / floor_pq / rho."""
+    return project_to_election(d["last_alr"], d["drift"], H, sigma_share=sigma,
+                               floor_pq=floor_pq, rho=rho, seed=0)
 
 
-def coverage(errs: np.ndarray, sd_trend: np.ndarray, miss: float) -> float:
-    total = np.sqrt(sd_trend ** 2 + miss ** 2)
-    return float((np.abs(errs / total) < Z80).mean())
-
-
-def calibrate_coverage(errs: np.ndarray, sd_trend: np.ndarray,
-                       target: float = COVERAGE_TARGET) -> float:
-    """Smallest MISS_SIGMA whose 80% interval reaches the coverage target —
-    robust to heavy tails (a few big misses won't over-widen the whole band)."""
-    grid = np.linspace(0.0, 0.1, 201)  # share-space, 0.05pp resolution
-    covs = np.array([coverage(errs, sd_trend, m) for m in grid])
-    reached = grid[covs >= target]
-    return float(reached[0]) if len(reached) else float(grid[-1])
-
-
-def _pool_horizon(H: int):
-    """Pool share-space errors + posterior spreads across cycles at horizon H,
-    over the 8 Riksdag parties."""
-    errs, sd_trend = [], []
+def _coverage(H: int, sigma: float, floor_pq: float, rho: float,
+              parties=range(N_PARTIES), lo_hi=(10, 90)) -> float:
+    """Pooled 80%-interval coverage of the projected shares vs actual, over the
+    given parties × cycles at horizon H."""
+    inside = total = 0
     for year in BACKTEST_YEARS:
         d = _load(year, H)
-        shares = _softmax_with_ref(d["election_alr_trend"])      # (S, K)
-        errs.append((shares.mean(0) - d["actual"])[:N_PARTIES])
-        sd_trend.append(shares.std(0)[:N_PARTIES])
-    return np.concatenate(errs), np.concatenate(sd_trend)
+        sh = _project(d, H, sigma, floor_pq, rho)
+        lo, hi = np.percentile(sh, lo_hi, axis=0)
+        for k in parties:
+            total += 1
+            inside += int(lo[k] <= d["actual"][k] <= hi[k])
+    return inside / total if total else float("nan")
 
 
-def calibrate_sigma_curve() -> dict:
-    """Coverage-calibrate sigma at H=0 and H=14, derive the variance curve."""
-    out = {}
-    for H in HORIZONS:
-        errs, sd_trend = _pool_horizon(H)
-        out[H] = {
-            "mm": miss_from_moments(errs, sd_trend),
-            "cov": calibrate_coverage(errs, sd_trend),
-            "rmse": float(np.sqrt((errs ** 2).mean())),
-            "cov_at_mm": coverage(errs, sd_trend, miss_from_moments(errs, sd_trend)),
-        }
-    s0 = max(out[0]["cov"], 1e-4)
-    s14 = max(out[H_FAR]["cov"], s0)              # monotone in horizon
-    out["floor"] = s0
-    out["slope"] = (s14 ** 2 - s0 ** 2) / H_FAR
-    return out
+def calibrate_forward(rho: float = MISS_RHO, floor_pq: float = FWD_FLOOR_PQ) -> dict:
+    """Find the sigma(H) curve whose forward projection reaches the coverage
+    target at H=0 and H=14, pooled over the 8 Riksdag parties."""
+    grid = np.linspace(0.005, 0.06, 111)
+
+    def smallest(H: int) -> float:
+        for s in grid:
+            if _coverage(H, s, floor_pq, rho) >= COVERAGE_TARGET:
+                return float(s)
+        return float(grid[-1])
+
+    floor = smallest(0)
+    s14 = max(smallest(H_FAR), floor)             # monotone in horizon
+    return {"floor": floor, "s14": s14, "slope": (s14 ** 2 - floor ** 2) / H_FAR}
+
+
+def _near_threshold_parties(d, lo=0.03, hi=0.08):
+    return [k for k in range(N_PARTIES) if lo <= d["actual"][k] <= hi]
 
 
 def momentum_test() -> dict:
@@ -193,35 +198,37 @@ def momentum_test() -> dict:
 
 
 def analyze() -> None:
-    print(f"=== MISS_SIGMA sigma(H) curve — converged model, "
+    print(f"=== model-carried sigma(H) — forward projection, "
           f"{len(BACKTEST_YEARS)} cycles {BACKTEST_YEARS} ===")
-    print("    share-space (pp), 8 Riksdag parties, coverage-calibrated to "
-          f"{COVERAGE_TARGET*100:.0f}%")
-    s = calibrate_sigma_curve()
-    for H in HORIZONS:
-        h = s[H]
-        print(f"  H={H:<2}: moment-match {h['mm']*100:5.2f}pp (cov {h['cov_at_mm']*100:.0f}%) | "
-              f"coverage-cal {h['cov']*100:5.2f}pp | realized RMSE {h['rmse']*100:5.2f}pp")
+    print(f"    share-space (pp), 8 Riksdag parties, coverage-calibrated to "
+          f"{COVERAGE_TARGET*100:.0f}% (rho={MISS_RHO}, floor_pq={FWD_FLOOR_PQ})")
+    s = calibrate_forward()
     print(f"  → MISS_SIGMA_FLOOR     = {s['floor']:.4f}   ({s['floor']*100:.2f}pp at H=0)")
     print(f"  → MISS_SIGMA_VAR_SLOPE = {s['slope']:.3e}   "
-          f"→ sigma(14) = {np.sqrt(s['floor']**2 + s['slope']*H_FAR)*100:.2f}pp")
+          f"→ sigma(14) = {s['s14']*100:.2f}pp")
+
+    print("\n=== coverage at the live constants (per-party 80% interval) ===")
+    for H in HORIZONS:
+        sig = miss_sigma_for_horizon(H)
+        allp = _coverage(H, sig, FWD_FLOOR_PQ, MISS_RHO)
+        # Near-threshold coverage, pooled over cycles' parties in 3–8%.
+        inside = total = 0
+        for year in BACKTEST_YEARS:
+            d = _load(year, H)
+            sh = _project(d, H, sig, FWD_FLOOR_PQ, MISS_RHO)
+            lo, hi = np.percentile(sh, [10, 90], axis=0)
+            for k in _near_threshold_parties(d):
+                total += 1
+                inside += int(lo[k] <= d["actual"][k] <= hi[k])
+        nt = f"{inside}/{total}" if total else "n/a"
+        print(f"  H={H:<2} sigma {sig*100:.2f}pp: all-party {allp*100:.0f}%  near-threshold {nt}")
 
     print("\n=== point accuracy (mean forecast vs actual, H=0) ===")
     for year in BACKTEST_YEARS:
         d = _load(year, 0)
-        fc = _softmax_with_ref(d["election_alr_trend"]).mean(0)
+        fc = _project(d, 0, miss_sigma_for_horizon(0), FWD_FLOOR_PQ, MISS_RHO).mean(0)
         mae = np.abs(fc - d["actual"])[:N_PARTIES].mean() * 100
         print(f"  {year}: MAE {mae:.2f}pp")
-
-    print("\n=== damped recent-momentum @H=14 (ALR RMSE, lower=better) ===")
-    m = momentum_test()
-    W, phi, rmse = m["best"]
-    print(f"  flat carry (phi=0): {m['flat_rmse']:.4f}")
-    print(f"  best: phi={phi:.2f}, W={W} → {rmse:.4f}  "
-          f"({(m['flat_rmse']-rmse)/m['flat_rmse']*100:.1f}% better than flat)")
-    if phi == 0.0 or (m["flat_rmse"] - rmse) / m["flat_rmse"] < 0.05:
-        print("  → effect is noise-level; live model ships phi=0 (no momentum term, "
-              "per-party drift only)")
 
 
 def main() -> None:

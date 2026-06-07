@@ -27,7 +27,7 @@ import pandas as pd
 
 from trefyranio.allocator import allocate_national, first_divisor_for_year
 from trefyranio.etl.schema import OTHER, RIKSDAG_PARTIES
-from trefyranio.model import MISS_SIGMA, PARTY_ORDER, forecast_with_miss
+from trefyranio.model import PARTY_ORDER, project_to_election
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
@@ -150,14 +150,17 @@ def build() -> None:
     # Most election-day variance is the miss term, so this is a proper predictive
     # ensemble, not just the ~600 NUTS draws.
     npz = np.load(PROCESSED_DIR / "forecast_samples.npz", allow_pickle=True)
-    eat = npz["election_alr_trend"]                          # (n_post, KM1)
-    # Use the horizon-aware miss sigma the model fit saved (not a fixed constant),
-    # so the simulator's spread matches the forecast's horizon.
-    sigma = float(npz["miss_sigma"]) if "miss_sigma" in npz else MISS_SIGMA
+    # Model-carried error: resample the LAST-POLL-WEEK latent + drift posterior and
+    # project each forward to election day with a fresh forward-innovation draw, to
+    # N_SIM draws — a proper predictive ensemble, not just the ~600 NUTS draws.
+    last_alr = npz["last_alr"]                               # (n_post, KM1)
+    drift = npz["drift"]                                     # (n_post, KM1)
+    horizon = float(npz["horizon_weeks"])
     shift = npz["industry_shift"] if "industry_shift" in npz else None
     rng = np.random.default_rng(SEAT_DRAW_SEED)
-    shares = forecast_with_miss(eat[rng.integers(0, eat.shape[0], N_SIM)],
-                                sigma_miss=sigma, seed=SEAT_DRAW_SEED, industry_shift=shift)
+    idx = rng.integers(0, last_alr.shape[0], N_SIM)
+    shares = project_to_election(last_alr[idx], drift[idx], horizon,
+                                 industry_shift=shift, seed=SEAT_DRAW_SEED)
     seats = simulate_seats(shares, PARTY_ORDER)             # (N_SIM, 8)
 
     seat_df = seat_distribution(seats)
