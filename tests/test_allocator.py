@@ -9,12 +9,15 @@ whole simulator rests on is proven correct.
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from trefyranio.allocator import (  # noqa: E402
     allocate_national,
     first_divisor_for_year,
 )
+from trefyranio.model import PROCESSED_DIR  # noqa: E402
 
 # Official 2022 results: party -> (votes, actual seats won).
 RESULTS_2022 = {
@@ -66,6 +69,37 @@ def test_first_divisor_for_year():
     assert first_divisor_for_year(2014) == 1.4
     assert first_divisor_for_year(2018) == 1.2
     assert first_divisor_for_year(2026) == 1.2
+
+
+@pytest.mark.skipif(
+    not (PROCESSED_DIR / "seats_actual.parquet").exists(),
+    reason="spines not built",
+)
+@pytest.mark.parametrize("year", [2018, 2022])
+def test_national_proportional_exact_under_current_rules(year):
+    """Under the post-2018 rules the leveling seats make the outcome fully
+    nationally proportional among 4%+ parties, so national-proportional
+    allocation reproduces the real per-party seat totals EXACTLY — no
+    per-constituency allocation needed for the forecast. (Pre-2018 elections
+    deviate by a few seats; that disproportionality is what the 2018 reform
+    removed.) Ground truth = seats_actual VR00 (the national-total row)."""
+    import pandas as pd
+
+    res = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
+    seats = pd.read_parquet(PROCESSED_DIR / "seats_actual.parquet")
+    votes = res[res.election_year == year].set_index("party")["votes"].to_dict()
+    got = allocate_national(
+        votes, first_divisor=first_divisor_for_year(year),
+        ignore_parties=frozenset({"Övr"}),
+    )
+    actual = (seats[(seats.election_year == year) & (seats.region_code == "VR00")]
+              .set_index("party")["seats"].to_dict())
+    for party, s in actual.items():
+        if party == "Övr":
+            continue
+        assert got.seats.get(party, 0) == int(s), (
+            f"{year} {party}: allocator {got.seats.get(party, 0)} vs actual {s}"
+        )
 
 
 def test_other_bucket_excluded_from_seats():

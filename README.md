@@ -199,11 +199,18 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
         `results_meta` (turnout), `seats_actual` (1973–2022). National + 29
         valkretsar + actual seats. FP→L mapping; year-aware first divisor
         (1.4 pre-2018, 1.2 from 2018). Allocator reproduces 2018 & 2022 exactly.
-  - [ ] Per-constituency allocator (310 fixed per valkrets + 39 leveling) — for
-        exact historical backtests; pure national-proportional already nails the
-        current-rule elections, deviates ≤3 seats on 1988/2010/2014.
+  - [x] **National-proportional allocation is EXACT under post-2018 rules** —
+        verified against `seats_actual`: it reproduces 2018 & 2022 to the seat
+        (`test_national_proportional_exact_under_current_rules`). The leveling
+        seats make the outcome fully nationally proportional among 4%+ parties, so
+        no per-constituency allocation is needed for forecast accuracy. (Pre-2018
+        elections deviate a few seats — that disproportionality is exactly what the
+        2018 reform removed; not relevant to 2026.)
+  - [~] Per-constituency allocator (310 fixed + 39 leveling) — **not for accuracy**
+        (national-proportional is exact) but to *visualize* where each party's/bloc's
+        seats come from (uniform-swing per-valkrets allocation → seat-origins map).
   - [ ] val.se valdistrikt-level results + demographics — Phase-2 enrichment.
-  - [ ] Geo (valkrets GeoJSON) — deferred to Phase 6.
+  - [~] Geo (valkrets GeoJSON) — for the seat-origins map (dedicated page).
 - [x] **Phase 2** — pollster ratings + house effects (`ratings.py` →
       `pollster_house_effects`, `industry_bias`, `pollster_ratings`). Built from
       final-30d poll error vs actual results, 2010–2022.
