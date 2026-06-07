@@ -37,13 +37,17 @@ import pandas as pd
 
 from trefyranio.model import (
     FWD_FLOOR_PQ,
+    GOVERNMENTS,
     MISS_RHO,
     PARTY_ORDER,
     PROCESSED_DIR,
     _alr,
     _softmax_with_ref,
+    cost_of_ruling,
     cycle_for,
     fit,
+    fund_weight,
+    fundamentals_prior,
     miss_sigma_for_horizon,
     prepare,
     project_to_election,
@@ -53,7 +57,7 @@ from trefyranio.model import (
 BACKTEST_YEARS = [2010, 2014, 2018, 2022]   # current party system, dense polling
 EARLY_YEARS = [2002, 2006]                  # pre-SD-in-riksdag; Phase-3 A/B only
 ALL_YEARS = EARLY_YEARS + BACKTEST_YEARS
-HORIZONS = [0, 14]                          # election-eve and the live ~14w gap
+HORIZONS = [0, 14, 30]                       # election-eve, live ~14w gap, early-cycle
 BT_DIR = PROCESSED_DIR / "backtests"
 N_PARTIES = 8                   # the eight Riksdag parties (exclude Övr)
 Z80 = 1.2816                    # 10–90% half-width in sd units
@@ -196,6 +200,40 @@ def _near_threshold_parties(d, lo=0.03, hi=0.08):
     return [k for k in range(N_PARTIES) if lo <= d["actual"][k] <= hi]
 
 
+def calibrate_fundamentals(years: list[int] = BACKTEST_YEARS,
+                           horizons=(14, 30)) -> dict:
+    """Does the cost-of-ruling prior improve the point forecast? Grid the blend
+    slope; for each horizon, apply the (leave-one-out) fundamentals blend to the
+    cached projection and pool the mean-forecast MAE over the 8 Riksdag parties ×
+    cycles. The gate: ship the slope that lowers MAE at H=14; report H=30 (where
+    fundamentals should help more). slope 0 = polls only."""
+    results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
+    funds = {}
+    for year in years:
+        delta = cost_of_ruling(results, exclude_year=year)          # leave-one-out
+        funds[year] = fundamentals_prior(actual_shares(results, year - 4),
+                                         GOVERNMENTS.get(year, set()), delta)
+
+    def mae(H: int, slope: float) -> float:
+        fw = min(0.5, slope * H)
+        errs = []
+        for year in years:
+            d = _load(year, H)
+            sh = project_to_election(d["last_alr"], d["drift"], H,
+                                     sigma_share=miss_sigma_for_horizon(H),
+                                     floor_pq=FWD_FLOOR_PQ, rho=MISS_RHO,
+                                     fundamentals=funds[year], fund_w=fw)
+            errs.append(np.abs(sh.mean(0) - d["actual"])[:N_PARTIES])
+        return float(np.concatenate(errs).mean())
+
+    grid = np.linspace(0.0, 0.03, 16)        # slope per week (fund_w = slope·H)
+    rows = {H: [(float(s), mae(H, float(s))) for s in grid] for H in horizons}
+    best14 = min(rows[14], key=lambda r: r[1])
+    base14 = rows[14][0][1]                  # slope 0 (polls only)
+    return {"rows": rows, "best_slope_14": best14[0], "mae14_best": best14[1],
+            "mae14_base": base14, "grid": grid}
+
+
 def momentum_test() -> dict:
     """Damped recent-momentum on the H=14 fits: does projecting the recent ALR
     slope forward (damped by phi over the 14wk gap) beat a flat carry?"""
@@ -291,6 +329,34 @@ def ab() -> None:
         print(f"    → 2010+ coverage: H=0 {cov0*100:.0f}%  H=14 {cov14*100:.0f}%\n")
 
 
+def fundamentals() -> None:
+    """Phase-6 gate: report cost-of-ruling MAE with vs without the prior."""
+    results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
+    print("=== cost-of-ruling fundamentals — point-forecast MAE (8 parties, 4 cycles) ===")
+    print(f"    pooled cost of ruling: {cost_of_ruling(results)*100:+.2f}pp "
+          f"(leave-one-out per cycle in the gate)\n")
+    c = calibrate_fundamentals()
+    impr = {}
+    for H in (14, 30):
+        base = c["rows"][H][0][1]
+        best = min(c["rows"][H], key=lambda r: r[1])
+        impr[H] = (base - best[1]) / base
+        print(f"  H={H:<2}: polls-only MAE {base*100:.3f}pp | "
+              f"best slope {best[0]:.4f} → MAE {best[1]*100:.3f}pp ({impr[H]*100:+.1f}%)")
+    # Gate: a genuine fundamentals signal must (a) beat polls at H=14 by a margin
+    # above noise AND (b) be corroborated by a LARGER gain further out (H=30,
+    # where polls carry less). Otherwise the H=14 'best' is grid-argmin overfit.
+    real = impr[14] >= 0.03 and impr[30] >= impr[14]
+    slope = c["best_slope_14"] if real else 0.0
+    print(f"\n  → ship FUND_WEIGHT_PER_WEEK = {slope:.4f}", end="")
+    if real:
+        print(f" (fund_w@15w = {min(0.5, slope*15):.2f})")
+    else:
+        print("  — fundamentals are noise-level (help <3% at H=14, no larger gain at\n"
+              "    H=30): dense Swedish polling already prices in the cost of ruling.\n"
+              "    Keep the machinery, ship weight 0 (cf. the rejected momentum term).")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     if cmd in ("fit", "all"):
@@ -301,6 +367,8 @@ def main() -> None:
         analyze()
     if cmd == "ab":
         ab()
+    if cmd == "fundamentals":
+        fundamentals()
 
 
 if __name__ == "__main__":

@@ -53,6 +53,20 @@ ELECTION_DATES = {
 }
 
 
+# Cabinet parties going INTO each election (the term's government), for the
+# cost-of-ruling fundamental. Swedish political history; FP recorded as L. The
+# magnitude is estimated from these cabinet entries (1976–2022). The 2026 entry
+# is the *forecast* governing set and includes SD: it is the support party of the
+# Tidö government (outside cabinet but co-owns its record) — a forecast-time
+# judgment, not separately validated against history.
+GOVERNMENTS = {
+    1976: {"S"}, 1979: {"C", "M", "L"}, 1982: {"C", "M", "L"}, 1985: {"S"},
+    1988: {"S"}, 1991: {"S"}, 1994: {"M", "L", "C", "KD"}, 1998: {"S"},
+    2002: {"S"}, 2006: {"S"}, 2010: {"M", "L", "C", "KD"}, 2014: {"M", "L", "C", "KD"},
+    2018: {"S", "MP"}, 2022: {"S", "MP"}, 2026: {"M", "KD", "L", "SD"},
+}
+
+
 @dataclass
 class CycleConfig:
     """One election cycle: the inter-election window the model fits over."""
@@ -137,6 +151,7 @@ class ModelData:
     n_weeks: int              # T (election week inclusive)
     election_week: int        # index of election day
     anchor_alr: np.ndarray    # (KM1,) ALR of the previous result
+    anchor_share: np.ndarray  # (K,) previous result shares (for the fundamentals prior)
     pollsters: list[str]
     weeks_dates: list[dt.date]
     # Phase-2 ratings, wired in (zeros/ones/zeros when use_ratings=False):
@@ -157,6 +172,53 @@ def _alr(p: np.ndarray) -> np.ndarray:
 # NOTE: when the model-carried-error rework lands, this share-space shift becomes
 # the election-day fundamentals/anchor prior's mean offset — a one-line move.
 SHRINK_IND = 0.30
+
+
+# Cost-of-ruling fundamentals prior. Governing parties historically lose vote
+# share (11 of 14 elections, mean −1.4pp). We blend a fundamentals-implied
+# election-day share toward the poll projection, weighted by horizon: full weight
+# far out, zero at the election (polls are truth on election day). The slope is
+# BACKTEST-CALIBRATED — set to 0 if fundamentals don't beat polls at the live
+# horizon. fund_weight(H) = clip(FUND_WEIGHT_PER_WEEK·H, 0, FUND_WEIGHT_CAP).
+FUND_WEIGHT_PER_WEEK = 0.0      # calibrated in Phase-6 (backtest); 0 until then
+FUND_WEIGHT_CAP = 0.5
+
+
+def fund_weight(weeks: float) -> float:
+    """Horizon blend weight for the fundamentals prior (0 at the election)."""
+    return float(min(FUND_WEIGHT_CAP, max(0.0, FUND_WEIGHT_PER_WEEK * weeks)))
+
+
+def cost_of_ruling(results: pd.DataFrame, exclude_year: int | None = None) -> float:
+    """Pooled mean governing-party share change (signed, negative = the cost of
+    ruling), estimated over the historical cabinet entries in GOVERNMENTS.
+    ``exclude_year`` drops that cycle — leave-one-out for honest backtest gating."""
+    yrs = sorted(results["election_year"].unique())
+    share = {y: results[results["election_year"] == y].set_index("party")["share"].to_dict()
+             for y in yrs}
+    deltas = []
+    for year, gov in GOVERNMENTS.items():
+        if year == exclude_year or year not in share or (year - 4) not in share:
+            continue
+        prev = share[year - 4]
+        deltas += [share[year].get(p, 0.0) - prev.get(p, 0.0) for p in gov]
+    return float(np.mean(deltas)) if deltas else 0.0
+
+
+def fundamentals_prior(prev_share: np.ndarray, governing: set[str],
+                       delta: float) -> np.ndarray:
+    """Election-day SHARE prior (K,) from the previous result + cost of ruling:
+    shift each governing party by ``delta`` (negative), redistribute the freed
+    mass across the non-governing parties in proportion to their previous share,
+    and renormalize to the simplex."""
+    f = prev_share.astype(float).copy()
+    gov_mask = np.array([p in governing for p in PARTY_ORDER])
+    f[gov_mask] = np.clip(f[gov_mask] + delta, 1e-6, None)
+    freed = float(prev_share[gov_mask].sum() - f[gov_mask].sum())   # >0 when delta<0
+    opp = prev_share * (~gov_mask)
+    if opp.sum() > 0:
+        f[~gov_mask] += freed * opp[~gov_mask] / opp.sum()
+    return f / f.sum()
 
 
 def _build_house_priors(pollsters: list[str], anchor_share: np.ndarray,
@@ -273,7 +335,7 @@ def prepare(polls: pd.DataFrame, results: pd.DataFrame,
     return ModelData(
         counts=counts, totals=totals, week=week, pollster=pollster,
         n_weeks=n_weeks, election_week=election_week, anchor_alr=_alr(anchor),
-        pollsters=pollsters, weeks_dates=weeks_dates,
+        anchor_share=anchor, pollsters=pollsters, weeks_dates=weeks_dates,
         house_prior_alr=house_prior, poll_weight=poll_weight,
         industry_shift_share=industry_shift,
     )
@@ -409,6 +471,7 @@ def project_to_election(
     last_alr: np.ndarray, drift: np.ndarray, horizon: float,
     sigma_share: float | None = None, rho: float = MISS_RHO,
     floor_pq: float = FWD_FLOOR_PQ, industry_shift: np.ndarray | None = None,
+    fundamentals: np.ndarray | None = None, fund_w: float = 0.0,
     seed: int = 0,
 ) -> np.ndarray:
     """Model-carried election-day share samples (N, K): project the latent forward
@@ -419,8 +482,10 @@ def project_to_election(
 
     ``last_alr``, ``drift`` (N, KM1): posterior draws of the latent ALR level at
     the last poll week and the per-party weekly drift. Central projection =
-    last_alr + drift·horizon. ``industry_shift`` (K, share space) corrects the
-    field-wide bias on the central forecast; the innovation adds the spread.
+    last_alr + drift·horizon. ``fundamentals`` (K) + ``fund_w`` optionally blend
+    the central toward a cost-of-ruling prior (fund_w=0 → polls only; see
+    fund_weight). ``industry_shift`` (K, share space) corrects the field-wide bias
+    on the central forecast; the innovation adds the spread.
 
     The innovation is sized PER PARTY so the induced share-space marginal sigma is
     ~uniform across party sizes (= ``sigma_share``, the calibrated target): in
@@ -432,6 +497,10 @@ def project_to_election(
         sigma_share = miss_sigma_for_horizon(horizon)
     rng = np.random.default_rng(seed)
     central = _softmax_with_ref(np.asarray(last_alr) + np.asarray(drift) * horizon)  # (N, K)
+    if fundamentals is not None and fund_w > 0:
+        # Blend the poll-driven central toward the fundamentals prior; weight grows
+        # with horizon (fund_w=0 at the election → pure polls).
+        central = (1.0 - fund_w) * central + fund_w * fundamentals
     if industry_shift is not None:
         central = np.clip(central + industry_shift, 0.0, None)
         central = central / central.sum(axis=-1, keepdims=True)
@@ -468,10 +537,18 @@ def build(warmup: int = 600, samples: int = 600) -> None:
     drift = np.asarray(posterior["drift"])                        # (S, KM1)
     sigma = miss_sigma_for_horizon(horizon)
     shift = data.industry_shift_share
+    # Cost-of-ruling fundamentals prior, horizon-weighted (fund_w=0 ships nothing).
+    governing = GOVERNMENTS.get(CYCLE_2026.election_day.year, set())
+    delta = cost_of_ruling(results)
+    fundamentals = fundamentals_prior(data.anchor_share, governing, delta)
+    fw = fund_weight(horizon)
     print(f"horizon {horizon}w → target sigma {sigma*100:.2f}pp; "
           f"industry shift (pp): " + ", ".join(
               f"{p}{shift[k]*100:+.2f}" for k, p in enumerate(PARTY_ORDER) if abs(shift[k]) > 1e-4))
-    election = project_to_election(last_alr, drift, horizon, industry_shift=shift)
+    print(f"cost-of-ruling {delta*100:+.2f}pp on {sorted(governing)}; "
+          f"fundamentals weight {fw:.2f}")
+    election = project_to_election(last_alr, drift, horizon, industry_shift=shift,
+                                   fundamentals=fundamentals, fund_w=fw)
 
     trend.to_parquet(PROCESSED_DIR / "model_trend.parquet", index=False)
     np.savez(
@@ -480,6 +557,7 @@ def build(warmup: int = 600, samples: int = 600) -> None:
         last_alr=last_alr, drift=drift, horizon_weeks=horizon,
         parties=np.array(PARTY_ORDER), election_day=str(CYCLE_2026.election_day),
         miss_sigma=sigma, industry_shift=shift,
+        fundamentals=fundamentals, fund_w=fw,
     )
     _report(trend, election, CYCLE_2026.election_day)
 

@@ -45,8 +45,9 @@ representation:
   persistent per-party miss, applied to the election-day forecast (see below).
 - Fit with **multiple chains** + an r-hat convergence check (see "Convergence").
 
-(The constituency-level / fundamentals-prior pieces of the full Economist model
-are not yet implemented — see roadmap.)
+(The constituency-level piece of the full Economist model is not yet implemented.
+A **cost-of-ruling fundamentals prior** *is* implemented but ships at **weight 0** —
+the backtest rejects it (see "Fundamentals prior" below).)
 
 **Swedish-specific tweaks:** the 4% national / 12% constituency threshold;
 government-formation as the headline output; a **field-bias correction** from the
@@ -89,6 +90,22 @@ accumulating over the H-week gap, supplies the realized poll-miss spread.
   understated. `MISS_RHO`=0.12 is **estimated from data** (bloc-total coverage:
   iid under-covers at 75–83%, ρ≈0.12 reaches 85%, consistent across the 4- and
   6-cycle backtests) rather than assumed.
+
+### Fundamentals prior (implemented, gated to 0)
+
+The remaining structural ingredient of the Economist model is a
+**fundamentals prior** — an election-day expectation from structure, not polls. The
+robust, leak-free Swedish fundamental is the **cost of ruling**: governing parties
+lose vote share in 11 of 14 elections (mean −1.4pp). It's implemented end-to-end
+(`GOVERNMENTS` table, `cost_of_ruling`, `fundamentals_prior`, a horizon-weighted
+blend in `project_to_election`) and **backtest-gated** — but the gate **rejects** it:
+blending toward fundamentals improves point-forecast MAE only ~1.5% at H=14 (noise
+on 4 cycles) and **0%** at H=30. A genuine fundamentals signal would help *more*
+further out; that it doesn't is the tell. The reason is structural: **Sweden polls
+densely even 7 months out, so the cost of ruling is already priced into the polls**
+by the time we forecast. So `FUND_WEIGHT_PER_WEEK = 0` — the machinery stays
+(re-testable with `python -m trefyranio.backtest fundamentals`), shipped inert, like
+the rejected momentum term. We don't ship a prior the backtest can't justify.
 
 ### Convergence (fixed)
 

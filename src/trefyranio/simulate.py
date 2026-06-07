@@ -157,10 +157,13 @@ def build() -> None:
     drift = npz["drift"]                                     # (n_post, KM1)
     horizon = float(npz["horizon_weeks"])
     shift = npz["industry_shift"] if "industry_shift" in npz else None
+    fundamentals = npz["fundamentals"] if "fundamentals" in npz else None
+    fund_w = float(npz["fund_w"]) if "fund_w" in npz else 0.0
     rng = np.random.default_rng(SEAT_DRAW_SEED)
     idx = rng.integers(0, last_alr.shape[0], N_SIM)
     shares = project_to_election(last_alr[idx], drift[idx], horizon,
-                                 industry_shift=shift, seed=SEAT_DRAW_SEED)
+                                 industry_shift=shift, fundamentals=fundamentals,
+                                 fund_w=fund_w, seed=SEAT_DRAW_SEED)
     seats = simulate_seats(shares, PARTY_ORDER)             # (N_SIM, 8)
 
     seat_df = seat_distribution(seats)

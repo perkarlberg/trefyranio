@@ -22,6 +22,9 @@ from trefyranio.model import (
     _build_house_priors,
     _load_pollster_weights,
     _softmax_with_ref,
+    cost_of_ruling,
+    fund_weight,
+    fundamentals_prior,
     miss_sigma_for_horizon,
     project_to_election,
 )
@@ -128,6 +131,51 @@ def test_pollster_weights_fallback():
     ratings = pd.DataFrame({"pollster": ["A", "B"], "weight": [1.3, 0.8]})
     w = _load_pollster_weights(["A", "New", "B"], ratings)
     assert w.tolist() == [1.3, 1.0, 0.8]                    # new entrant → 1.0
+
+
+def test_cost_of_ruling_is_negative():
+    # Two synthetic cycles where the governing party (S) loses 2pp each time.
+    import trefyranio.model as m
+    res = pd.DataFrame({
+        "election_year": [1998, 1998, 2002, 2002],
+        "party": ["S", "M", "S", "M"],
+        "share": [0.40, 0.30, 0.38, 0.32],   # S −2pp 1998→2002; M +2pp
+    })
+    old = m.GOVERNMENTS
+    try:
+        m.GOVERNMENTS = {2002: {"S"}}        # S governed into 2002 (prev 1998)
+        assert cost_of_ruling(res) == pytest.approx(-0.02, abs=1e-9)
+    finally:
+        m.GOVERNMENTS = old
+
+
+def test_fundamentals_prior_penalizes_governing():
+    prev = np.array([0.30, 0.25, 0.20, 0.06, 0.07, 0.05, 0.04, 0.02, 0.01])
+    prev = prev / prev.sum()
+    gov = {"M", "KD", "L", "SD"}
+    f = fundamentals_prior(prev, gov, delta=-0.014)
+    gov_idx = [PARTY_ORDER.index(p) for p in gov]
+    opp_idx = [i for i in range(K) if PARTY_ORDER[i] not in gov and PARTY_ORDER[i] != "Övr"]
+    assert np.allclose(f.sum(), 1.0)
+    assert (f[gov_idx] < prev[gov_idx]).all()          # governing pulled down
+    assert (f[opp_idx] >= prev[opp_idx] - 1e-12).all()  # opposition gains the freed mass
+
+
+def test_fund_weight_zero_at_election_and_monotone():
+    assert fund_weight(0) == 0.0
+    assert fund_weight(8) >= fund_weight(0)
+    assert fund_weight(30) >= fund_weight(8)
+
+
+def test_projection_blends_toward_fundamentals():
+    last = np.tile(_alr(np.full(K, 1 / K)), (2000, 1))
+    drift = np.zeros_like(last)
+    fund = np.zeros(K); fund[PARTY_ORDER.index("S")] = 1.0  # degenerate: all mass on S
+    none = project_to_election(last, drift, 14, fund_w=0.0, seed=0)
+    blended = project_to_election(last, drift, 14, fundamentals=fund, fund_w=0.4, seed=0)
+    si = PARTY_ORDER.index("S")
+    assert blended[:, si].mean() > none[:, si].mean()   # pulled toward the fundamentals
+    assert np.allclose(blended.sum(1), 1.0)
 
 
 def test_industry_shift_lifts_understated_party():
