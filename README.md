@@ -43,6 +43,15 @@ representation:
   start neutral.
 - **Field-bias correction**: a heavily-shrunk (30%) adjustment for the industry's
   persistent per-party miss, applied to the election-day forecast (see below).
+  *Identification note:* centering house effects to zero-sum identifies the latent
+  as the **pollster consensus**, which de-biases relative to the *average pollster*,
+  not relative to *truth* — a field-wide lean is invisible to a poll-vs-poll
+  comparison. We break that degeneracy with an external truth anchor: `industry_bias`
+  is measured poll-vs-**actual result** (2010–2022) and applied as the field-bias
+  correction. The house priors are de-biased of this same field component first, so
+  the two corrections compose without double-counting. (The displayed *trend* line is
+  the raw consensus; the *forecast* carries the truth correction — the 538-style split
+  of "poll average" vs "forecast".)
 - Fit with **multiple chains** + an r-hat convergence check (see "Convergence").
 
 (The constituency-level piece of the full Economist model is not yet implemented.
@@ -282,6 +291,27 @@ python -m trefyranio.web_export           # → web/src/data/*.json
 
 **Live:** https://trefyranio.web.app (Firebase Hosting, project `trefyranio`).
 Custom domain `trefyran.io` pending DNS.
+
+## References
+
+The model stands on established work, not a bespoke recipe:
+
+**Dynamic Bayesian poll aggregation & house effects**
+- Jackman (2005), [*Pooling the Polls Over an Election Campaign*](https://www.tandfonline.com/doi/abs/10.1080/10361140500302472), *Australian Journal of Political Science* 40(4) — latent vote intention + per-pollster house effects.
+- Linzer (2013), [*Dynamic Bayesian Forecasting of Presidential Elections in the States*](https://doi.org/10.1080/01621459.2012.737735), *JASA* 108(501).
+- Heidemanns, Gelman & Morris (2020), [*An Updated Dynamic Bayesian Forecasting Model for the U.S. Presidential Election*](https://hdsr.mitpress.mit.edu/pub/nw1dzd02), *Harvard Data Science Review* 2(4) — the Economist model.
+- Stoetzer, Neunhoeffer, Gschwend, Munzert & Sternberg (2019), [*Forecasting Elections in Multiparty Systems*](https://doi.org/10.1017/pan.2018.49), *Political Analysis* 27(2) — the closest analog (multiparty, polls + fundamentals, coalition probabilities).
+
+**Vote shares as compositional data (the ALR/simplex geometry)**
+- Aitchison (1986), *The Statistical Analysis of Compositional Data* — the additive-log-ratio transform.
+- Bergman & Holmquist (2014), [*Poll of Polls: A Compositional Loess Model*](https://onlinelibrary.wiley.com/doi/10.1111/sjos.12023), *Scandinavian Journal of Statistics* 41(2); Bergman (2015), [*Are there house effects in Swedish polls?*](http://lup.lub.lu.se/search/record/c66befbe-deaa-4b4d-852f-9bb56a6107c5) (Lund) — Swedish poll-of-polls + house effects, compositional.
+
+**Time series & inference**
+- Harvey (1989), *Forecasting, Structural Time Series Models and the Kalman Filter* — the local-level random walk.
+- Hoffman & Gelman (2014), [*The No-U-Turn Sampler*](https://jmlr.org/papers/v15/hoffman14a.html), *JMLR* 15 — the NUTS sampler (via NumPyro).
+
+**Inspiration**
+- Nate Silver / FiveThirtyEight: pollster ratings, house-effect adjustment, probabilistic simulation ([how 538's forecast works](https://abcnews.go.com/538/538s-2024-presidential-election-forecast-works/story?id=113068753); Silver, *The Signal and the Noise*, 2012). A Sweden-specific divergence: 538/Economist lean on fundamentals early-cycle, but Swedish polling is dense enough that our backtest finds fundamentals add nothing even ~7 months out (see "Fundamentals prior").
 
 ## Develop
 

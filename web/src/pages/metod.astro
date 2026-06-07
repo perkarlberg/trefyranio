@@ -22,11 +22,16 @@ import Base from '../layouts/Base.astro';
       små nettoförändringar fram till valet.</p>
 
     <h3>Varje mätinstitut kalibreras</h3>
-    <p>Institut som historiskt träffat bäst väger tyngre i sammanvägningen, och varje instituts
-      systematiska lutning (”house effect”) skattas och justeras bort — med institutets historiska
-      lutning som utgångspunkt. Utöver det korrigerar modellen för <em>branschens</em> gemensamma
-      missar: vissa partier (t.ex. SD och S) har historiskt underskattats av i stort sett alla
-      institut, och en dämpad korrigering för det läggs på valdagsprognosen.</p>
+    <p>Institut som historiskt träffat bäst väger tyngre i sammanvägningen. Varje instituts
+      systematiska lutning (”house effect”) skattas och justeras bort — relativt
+      <em>genomsnittsinstitutet</em>, med institutets historiska lutning som startgissning.</p>
+    <p>Men genomsnittet kan självt luta: om nästan alla institut missar ett parti åt samma håll syns
+      det inte i en jämförelse mellan instituten. Därför mäter vi <em>branschens</em> gemensamma
+      lutning mot <em>de faktiska valresultaten</em> 2010–2022 — inte mot konsensus — och lägger en
+      dämpad korrigering på valdagsprognosen. I praktiken har S underskattats med ~2 procentenheter
+      och V och MP överskattats med ~1, medan SD:s slutmätningar legat nära (myten om en stor
+      SD-underskattning gäller mest tidiga mätningar). Det är så vi förankrar prognosen i utfallet,
+      inte i ”det genomsnittliga institutet”.</p>
 
     <h3>Från röster till mandat</h3>
     <p>Tiotusentals simuleringar dras ur modellen. Varje simulering körs genom det riktiga valsystemet:
@@ -53,6 +58,46 @@ import Base from '../layouts/Base.astro';
       förhandlingar som ingen modell kan förutsäga — särskilt Centerns vägval — så vi visar mandatmatematiken
       och låter det politiska valet vara öppet.</p>
 
+    <h3>Vetenskaplig grund</h3>
+    <p>Modellen är ingen egen uppfinning — den bygger på etablerad forskning om dynamisk bayesiansk
+      sammanvägning av opinionsmätningar och om valprognoser i flerpartisystem.</p>
+    <ul class="refs">
+      <li><b>Bayesiansk sammanvägning &amp; house effects.</b> Den latenta väljaropinionen som följs
+        över tid, med en bias per institut, går tillbaka till Jackman (2005),
+        <a href="https://www.tandfonline.com/doi/abs/10.1080/10361140500302472"><i>Pooling the Polls
+        Over an Election Campaign</i></a> (Australian Journal of Political Science). Den dynamiska
+        prognosvarianten: Linzer (2013),
+        <a href="https://doi.org/10.1080/01621459.2012.737735"><i>Dynamic Bayesian Forecasting of
+        Presidential Elections in the States</i></a> (JASA), och <i>The Economist</i>-modellen —
+        Heidemanns, Gelman &amp; Morris (2020),
+        <a href="https://hdsr.mitpress.mit.edu/pub/nw1dzd02"><i>An Updated Dynamic Bayesian Forecasting
+        Model</i></a> (Harvard Data Science Review).</li>
+      <li><b>Flerpartisystem.</b> Närmast vårt upplägg: Stoetzer, Neunhoeffer, Gschwend, Munzert &amp;
+        Sternberg (2019),
+        <a href="https://doi.org/10.1017/pan.2018.49"><i>Forecasting Elections in Multiparty Systems:
+        A Bayesian Approach Combining Polls and Fundamentals</i></a> (Political Analysis) — bayesianskt,
+        med koalitionssannolikheter.</li>
+      <li><b>Svenska mätningar som kompositionsdata.</b> Röstandelar lever på simplexet (de summerar
+        till 100 %); vår ALR-transform kommer från Aitchisons (1986) kompositionsstatistik. För
+        svensk tillämpning: Bergman &amp; Holmquist (2014),
+        <a href="https://onlinelibrary.wiley.com/doi/10.1111/sjos.12023"><i>Poll of Polls: A
+        Compositional Loess Model</i></a> (Scandinavian Journal of Statistics), och Bergman (2015),
+        <a href="http://lup.lub.lu.se/search/record/c66befbe-deaa-4b4d-852f-9bb56a6107c5"><i>Are there
+        house effects in Swedish polls?</i></a> (Lunds universitet).</li>
+      <li><b>Tidsserie &amp; inferens.</b> Slumpvandringen följer Harveys (1989) strukturella
+        tidsseriemodeller; modellen anpassas med Hamiltonian Monte Carlo —
+        <a href="https://jmlr.org/papers/v15/hoffman14a.html">NUTS-samplern</a> (Hoffman &amp; Gelman,
+        2014), via NumPyro.</li>
+      <li><b>Inspiration.</b> Nate Silver / FiveThirtyEight: institutsbetyg, house-effect-justering och
+        probabilistisk simulering snarare än en enda gissning —
+        <a href="https://abcnews.go.com/538/538s-2024-presidential-election-forecast-works/story?id=113068753">så
+        fungerar 538:s prognos</a>; Silver, <i>The Signal and the Noise</i> (2012).</li>
+    </ul>
+    <p class="muted">En skillnad mot de amerikanska modellerna: i USA väger fundamenta (ekonomi,
+      sittande president) tungt tidigt i cykeln. Vårt backtest visar att svenska mätningar är så täta
+      att de redan fångar t.ex. ”regeringsslitaget” långt före valet — så vår fundamenta-term (cost of
+      ruling) finns inbyggd men är avstängd tills data motiverar den.</p>
+
     <h3>Källor</h3>
     <p class="muted">Valresultat: Valmyndigheten och SCB. Opinionsmätningar: SwedishPolls (CC0) samt SCB.
       Partifärger enligt svensk konvention. Detta är en prognos byggd på offentliga data — inte en
@@ -65,6 +110,10 @@ import Base from '../layouts/Base.astro';
         border-radius: 8px; padding: 14px 18px; margin: 18px 0 8px; }
       .transparency p { margin: 0 0 6px; } .transparency p:last-child { margin: 0; }
       .transparency a { color: var(--ink); font-weight: 700; }
+      .refs { max-width: 64ch; margin: 4px 0 8px; padding-left: 18px; font-size: 14px; color: var(--muted); }
+      .refs li { margin: 0 0 8px; line-height: 1.5; }
+      .refs a { color: var(--ink); text-decoration: underline; }
+      .refs b { color: var(--text, inherit); }
     </style>
   </article>
 </Base>
