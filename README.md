@@ -77,12 +77,18 @@ accumulating over the H-week gap, supplies the realized poll-miss spread.
   ~uniform in pp across party sizes). Coverage-calibrated across **four cycles
   (2010, 2014, 2018, 2022)** to 85% of the 80% interval: `σ(H) = √(1.55² + 0.060·H) pp`
   → ~1.55pp at H=0, ~1.80pp at H=14 (the *total* election-day spread; `MISS_SIGMA_*`).
+  A 6-cycle test (adding 2002/2006) was **rejected**: those pre-2010 cycles had
+  bigger misses (thinner polling, SD's emergence), and their wider σ *over-covers*
+  the 2010+ regime the 2026 forecast lives in (91% vs the 85% target) — a regime
+  mismatch, so we calibrate σ on the current party system only.
 - **Hybrid per-party scaling** — in logit space share spread is `p(1−p)·σ_logit`,
   so we set `σ_logit = σ_share / (p(1−p))` (floored, `FWD_FLOOR_PQ`) to realize a
   ~uniform-pp band while protecting the 4%-threshold survival probabilities.
 - **Correlated within blocs** — a factor model on the forward innovation gives
-  within-bloc co-movement (`MISS_RHO`≈0.2) so bloc-total / government-formation
-  variance isn't understated. ρ is calibratable from the bloc-total backtest errors.
+  within-bloc co-movement so bloc-total / government-formation variance isn't
+  understated. `MISS_RHO`=0.12 is **estimated from data** (bloc-total coverage:
+  iid under-covers at 75–83%, ρ≈0.12 reaches 85%, consistent across the 4- and
+  6-cycle backtests) rather than assumed.
 
 ### Convergence (fixed)
 
@@ -189,17 +195,18 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       `seat_draws.npz`. Conditionals guarded against tiny-subsample noise.
 - [x] **Phase 5** — backtest & calibration (`backtest.py`). Refits the converged
       model across **four cycles (2010, 2014, 2018, 2022)** from polls-only,
-      horizon-matched at H=0 and H=14. **Calibrated `MISS_SIGMA`** (share-space,
-      coverage-cal to 85%, σ(H) curve ~1.50→1.65pp). Point MAE 0.6–1.5pp across
-      cycles. The miss belongs in share space, not ALR; within-bloc correlation as
-      a factor (`MISS_RHO`≈0.2). Damped recent-momentum tested on all 4 cycles and
-      rejected (noise-level, overfit argmax) → drift-only. ⚠️ The earlier
-      "momentum thesis confirmed (velocity)" result was measured on the
+      horizon-matched at H=0 and H=14, and calibrates the **model-carried forward
+      projection** (coverage-cal to 85%, σ(H) ~1.55→1.80pp; the induced share-space
+      spread is ~uniform-pp). Point MAE 0.6–1.5pp. Damped recent-momentum tested on
+      all 4 cycles and rejected (noise-level, overfit argmax) → drift-only. ⚠️ The
+      earlier "momentum thesis confirmed (velocity)" result was on the
       **non-converged** model and is superseded.
-      - [ ] **6-cycle backtest (2002, 2006)** — more power to pin `MISS_SIGMA`
-            and estimate `MISS_RHO` from data, with pre-2010 caveats (SD not in
-            riksdag, FP=L). Would also let a momentum term be re-tested with more
-            statistical power.
+      - [x] **6-cycle A/B (2002, 2006)** — tested adding the two pre-2010 cycles.
+            **Rejected for σ**: their bigger misses over-cover the 2010+ regime
+            (91% vs 85%) — a regime mismatch, so σ stays 4-cycle. **`MISS_RHO`
+            estimated from data** at 0.12 (consistent 4- vs 6-cycle), replacing the
+            assumed 0.2. (FP=L and SD-as-own-category are already handled in the
+            data spine, so no special pre-2010 munging was needed.)
 - [~] **Phase 6** — Astro webapp (Swedish, prime-era 538 look) + Cloudflare
       Pages + local recompute/publish.
   - [x] `parties.py` (verified palette), `web_export.py` (→ `web/src/data/*.json`:

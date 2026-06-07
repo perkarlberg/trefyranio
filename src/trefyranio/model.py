@@ -118,10 +118,12 @@ FWD_FLOOR_PQ = 0.0384           # = p(1-p) at p=4%; parties below 4% damped
 # variance — and the headline government probabilities are bloc arithmetic.
 # Factor model on the logit innovation: each party's z = sqrt(rho)·(shared bloc
 # factor) + sqrt(1-rho)·(idiosyncratic), so the within-bloc correlation is rho
-# while the per-party marginal is preserved. rho is calibratable from the bloc-
-# total backtest errors (Phase 3); 0.2 is the current estimate. Groups mirror
-# simulate's blocs. (rho=0.2 lifts P(Tidö maj) ~11%→14% vs iid.)
-MISS_RHO = 0.2
+# while the per-party marginal is preserved. ESTIMATED FROM DATA (Phase 3) by
+# bloc-total coverage: iid (rho=0) under-covers bloc totals (75–83%), and rho≈0.12
+# is the smallest value reaching 85% — consistent across the 4- and 6-cycle
+# backtests. Modest and a bit noisy (~8 bloc-cycle points), but data-grounded
+# rather than assumed. Groups mirror simulate's blocs.
+MISS_RHO = 0.12
 _MISS_GROUP = {"S": 1, "M": 0, "SD": 0, "C": 2, "V": 1, "KD": 0, "MP": 1, "L": 0, "Övr": 3}
 MISS_GROUP_IDX = np.array([_MISS_GROUP[p] for p in PARTY_ORDER])
 

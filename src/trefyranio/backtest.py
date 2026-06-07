@@ -51,12 +51,17 @@ from trefyranio.model import (
 )
 
 BACKTEST_YEARS = [2010, 2014, 2018, 2022]   # current party system, dense polling
+EARLY_YEARS = [2002, 2006]                  # pre-SD-in-riksdag; Phase-3 A/B only
+ALL_YEARS = EARLY_YEARS + BACKTEST_YEARS
 HORIZONS = [0, 14]                          # election-eve and the live ~14w gap
 BT_DIR = PROCESSED_DIR / "backtests"
 N_PARTIES = 8                   # the eight Riksdag parties (exclude Övr)
 Z80 = 1.2816                    # 10–90% half-width in sd units
 H_FAR = 14                      # live-forecast horizon (weeks from last poll)
 COVERAGE_TARGET = 0.85          # mildly conservative interval coverage
+# Blocs for the within-bloc miss-correlation estimate (mirror model._MISS_GROUP
+# and simulate's blocs). Only the multi-party blocs identify rho.
+_RHO_BLOCS = {"RIGHT": ["M", "SD", "KD", "L"], "LEFT": ["S", "V", "MP"]}
 
 
 def actual_shares(results: pd.DataFrame, year: int) -> np.ndarray:
@@ -69,13 +74,14 @@ def _path(year: int, H: int):
     return BT_DIR / f"conv_{year}_h{H}.npz"
 
 
-def fit_all(warmup: int = 500, samples: int = 500, force: bool = False) -> None:
+def fit_all(warmup: int = 500, samples: int = 500, force: bool = False,
+            years: list[int] = BACKTEST_YEARS) -> None:
     """Refit each cycle at each horizon with the converged model; cache to disk.
     Skips files that already exist unless ``force``."""
     polls = pd.read_parquet(PROCESSED_DIR / "polls.parquet")
     results = pd.read_parquet(PROCESSED_DIR / "results_national.parquet")
     BT_DIR.mkdir(parents=True, exist_ok=True)
-    for year in BACKTEST_YEARS:
+    for year in years:
         cycle = cycle_for(year)
         for H in HORIZONS:
             out = _path(year, H)
@@ -126,11 +132,12 @@ def _project(d, H: int, sigma: float, floor_pq: float, rho: float):
 
 
 def _coverage(H: int, sigma: float, floor_pq: float, rho: float,
+              years: list[int] = BACKTEST_YEARS,
               parties=range(N_PARTIES), lo_hi=(10, 90)) -> float:
     """Pooled 80%-interval coverage of the projected shares vs actual, over the
     given parties × cycles at horizon H."""
     inside = total = 0
-    for year in BACKTEST_YEARS:
+    for year in years:
         d = _load(year, H)
         sh = _project(d, H, sigma, floor_pq, rho)
         lo, hi = np.percentile(sh, lo_hi, axis=0)
@@ -140,20 +147,49 @@ def _coverage(H: int, sigma: float, floor_pq: float, rho: float,
     return inside / total if total else float("nan")
 
 
-def calibrate_forward(rho: float = MISS_RHO, floor_pq: float = FWD_FLOOR_PQ) -> dict:
+def calibrate_forward(years: list[int] = BACKTEST_YEARS,
+                      rho: float = MISS_RHO, floor_pq: float = FWD_FLOOR_PQ) -> dict:
     """Find the sigma(H) curve whose forward projection reaches the coverage
     target at H=0 and H=14, pooled over the 8 Riksdag parties."""
     grid = np.linspace(0.005, 0.06, 111)
 
     def smallest(H: int) -> float:
         for s in grid:
-            if _coverage(H, s, floor_pq, rho) >= COVERAGE_TARGET:
+            if _coverage(H, s, floor_pq, rho, years) >= COVERAGE_TARGET:
                 return float(s)
         return float(grid[-1])
 
     floor = smallest(0)
     s14 = max(smallest(H_FAR), floor)             # monotone in horizon
     return {"floor": floor, "s14": s14, "slope": (s14 ** 2 - floor ** 2) / H_FAR}
+
+
+def calibrate_rho(years: list[int] = BACKTEST_YEARS, H: int = H_FAR,
+                  floor_pq: float = FWD_FLOOR_PQ) -> dict:
+    """Estimate the within-bloc miss correlation from BLOC-TOTAL coverage. With
+    iid misses the bloc-total interval is too narrow; rho widens it. Smallest rho
+    whose projected bloc-total 80% interval covers the realized bloc totals at the
+    target, pooled over the multi-party blocs (RIGHT, LEFT) × cycles."""
+    bloc_idx = {b: [PARTY_ORDER.index(p) for p in ps] for b, ps in _RHO_BLOCS.items()}
+    sigma = miss_sigma_for_horizon(H)
+
+    def bloc_coverage(rho: float) -> float:
+        inside = total = 0
+        for year in years:
+            d = _load(year, H)
+            sh = _project(d, H, sigma, floor_pq, rho)
+            for idx in bloc_idx.values():
+                lo, hi = np.percentile(sh[:, idx].sum(1), [10, 90])
+                act = float(np.asarray(d["actual"])[idx].sum())
+                total += 1
+                inside += int(lo <= act <= hi)
+        return inside / total if total else float("nan")
+
+    grid = np.linspace(0.0, 0.8, 33)
+    covs = [(float(r), bloc_coverage(float(r))) for r in grid]
+    reached = [r for r, c in covs if c >= COVERAGE_TARGET]
+    return {"rho": reached[0] if reached else float(grid[-1]),
+            "iid_coverage": bloc_coverage(0.0), "curve": covs}
 
 
 def _near_threshold_parties(d, lo=0.03, hi=0.08):
@@ -231,12 +267,40 @@ def analyze() -> None:
         print(f"  {year}: MAE {mae:.2f}pp")
 
 
+def ab() -> None:
+    """Phase-3 A/B: does adding 2002 & 2006 (pre-SD-in-riksdag) change the
+    calibration? Three arms. Every arm is EVALUATED on the 2010+ cycles (the
+    regime the 2026 forecast lives in) so the comparison is on the relevant
+    population, not the training set."""
+    arms = {
+        "(i) 4-cycle [2010+]":        {"sigma_years": BACKTEST_YEARS, "rho_years": BACKTEST_YEARS},
+        "(ii) 6-cycle [all]":         {"sigma_years": ALL_YEARS,      "rho_years": ALL_YEARS},
+        "(iii) 6-cycle sigma, rho 2010+": {"sigma_years": ALL_YEARS,  "rho_years": BACKTEST_YEARS},
+    }
+    print("=== Phase-3 A/B: 2002/2006 regime-mismatch test ===")
+    print("    calibrate on the arm's cycles; EVALUATE coverage on 2010+ (the 2026 regime)\n")
+    for name, a in arms.items():
+        s = calibrate_forward(a["sigma_years"])
+        r = calibrate_rho(a["rho_years"])
+        # Evaluate THIS arm's constants on the 2010+ cycles.
+        cov0 = _coverage(0, s["floor"], FWD_FLOOR_PQ, r["rho"], BACKTEST_YEARS)
+        cov14 = _coverage(H_FAR, s["s14"], FWD_FLOOR_PQ, r["rho"], BACKTEST_YEARS)
+        print(f"{name}")
+        print(f"    floor {s['floor']*100:.2f}pp  sigma(14) {s['s14']*100:.2f}pp  "
+              f"rho {r['rho']:.2f} (iid bloc-cov {r['iid_coverage']*100:.0f}%)")
+        print(f"    → 2010+ coverage: H=0 {cov0*100:.0f}%  H=14 {cov14*100:.0f}%\n")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     if cmd in ("fit", "all"):
         fit_all(force="--force" in sys.argv)
+    if cmd == "fit-early":
+        fit_all(force="--force" in sys.argv, years=EARLY_YEARS)
     if cmd in ("analyze", "all"):
         analyze()
+    if cmd == "ab":
+        ab()
 
 
 if __name__ == "__main__":
