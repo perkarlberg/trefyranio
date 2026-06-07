@@ -9,7 +9,7 @@ const sims = forecast.counts.sims;
 const preset = forecast.government.blocs.right;  // start on the Tidö constellation
 ---
 <section class="section" id="coalition">
-  <p class="section-label">Koalitioner</p>
+  <p class="section-label">Block &amp; koalitioner</p>
   <h2>Vilka kan bilda regering?</h2>
   <p class="lede">Inget parti styr ensamt. Klicka ihop en koalition så räknas dess chans till egen
     majoritet (≥175 mandat) fram direkt ur {sims.toLocaleString('sv-SE')} simuleringar.</p>
@@ -34,6 +34,7 @@ const preset = forecast.government.blocs.right;  // start on the Tidö constella
       <div class="cb-pick faint" id="cb-pick">Laddar simuleringar …</div>
     </div>
   </div>
+  <p class="vk-link"><a href="/mandatkarta">Var i landet kommer blockens mandat ifrån? Se per valkrets →</a></p>
 
   <script is:inline define:vars={{ ORDER, majority, preset, nameOf, sims }}>
     (function () {
@@ -94,6 +95,8 @@ const preset = forecast.government.blocs.right;  // start on the Tidö constella
   </script>
 
   <style>
+    .vk-link { text-align: center; font-size: 14px; margin: 16px 0 0; }
+    .vk-link a { color: var(--muted); font-weight: 700; }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
     .chip { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--rule);
       background: #fff; color: var(--muted); border-radius: 999px; padding: 6px 13px;

@@ -1,0 +1,44 @@
+---
+import Base from '../layouts/Base.astro';
+import ValkretsSeats from '../components/ValkretsSeats.astro';
+const title = 'Mandat per valkrets 2026 – var kommer partiernas mandat ifrån? | Trefyranio';
+const desc = 'Var i landet kommer varje partis och blocks riksdagsmandat ifrån? Mandatfördelningen ' +
+  'per valkrets i den centrala prognosen för riksdagsvalet 2026 — Sveriges 29 valkretsar.';
+---
+<Base title={title} description={desc}>
+  <article class="section">
+    <p class="section-label">Riksdagsvalet 2026</p>
+    <h2>Var kommer mandaten ifrån?</h2>
+    <p class="lede">De 349 mandaten fördelas i Sveriges 29 valkretsar. Här visas hur den centrala
+      prognosens mandat fördelar sig geografiskt — per parti och per block. Partitotalerna är exakt
+      desamma som i <a href="/">huvudprognosen</a> (utjämningsmandaten gör fördelningen proportionell);
+      det är <em>var</em> mandaten landar som visas här.</p>
+  </article>
+
+  <article class="section">
+    <ValkretsSeats />
+  </article>
+
+  <article class="section method-note">
+    <h3>Så räknas valkretsfördelningen</h3>
+    <p>Modellen prognoser <em>nationellt</em> partistöd. För att fördela det på valkretsar antar vi att
+      den nationella förändringen sedan 2022 slår igenom <em>likformigt</em> i varje valkrets (uniform
+      swing), och fördelar sedan varje partis exakta nationella mandat på valkretsarna med
+      <em>biproportionell mandatfördelning</em> (Balinski–Demange/Pukelsheim). Det ger en fördelning
+      vars rad- och kolumnsummor stämmer exakt — varje partis riksrikstotal och varje valkrets
+      mandatantal.</p>
+    <p class="muted">Två ärliga förbehåll: (1) svängningar är inte perfekt likformiga mellan valkretsar,
+      så den geografiska <em>detaljen</em> är en uppskattning (de nationella partitotalerna är exakta);
+      (2) biproportionell metod är inte exakt samma sak som Sveriges fasta‑plus‑utjämningsregler, men
+      återskapar de faktiska valkretsmandaten 2022 på ~8 av 349. Detta är den centrala prognosen
+      (ett scenario), inte hela sannolikhetsfördelningen.</p>
+    <p class="links"><a href="/">← Hela prognosen</a> · <a href="/koalitioner">Block &amp; koalitioner</a>
+      · <a href="/metod">Metod</a></p>
+  </article>
+
+  <style>
+    .method-note h3 { font-size: 18px; font-weight: 800; margin: 8px 0 4px; }
+    .method-note p { max-width: 64ch; margin: 0 0 6px; }
+    .links { font-size: 14px; } .links a { color: var(--muted); }
+  </style>
+</Base>

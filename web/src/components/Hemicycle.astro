@@ -81,8 +81,11 @@ const vh = cy + 30;
   {eliminated.length > 0 && (
     <p class="elim faint">{eliminated.join(', ')} hamnar under 4 % i detta huvudscenario och får 0 mandat.</p>
   )}
+  <p class="vk-link"><a href="/mandatkarta">Var i landet kommer mandaten ifrån? Se per valkrets →</a></p>
 
   <style>
+    .vk-link { text-align: center; font-size: 14px; margin: 14px 0 0; }
+    .vk-link a { color: var(--muted); font-weight: 700; }
     .elim { text-align: center; font-size: 12.5px; margin: 10px 0 0; }
     .hemi { width: 100%; height: auto; display: block; margin: 8px 0 4px; }
     .maj { font-size: 15px; font-weight: 700; fill: var(--ink); }
