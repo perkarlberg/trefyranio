@@ -308,6 +308,14 @@ python -m trefyranio.web_export           # → web/src/data/*.json
 # calibration (occasional):          python -m trefyranio.backtest all   # ~25 min (8 fits, cached)
 ```
 
+**Refreshing when new polls land:** run `build_polls` first and check whether the
+latest poll actually changed — if not, stop (a refit with no new poll just reproduces
+the same numbers). If it did, `./daily_update.sh`, then commit the regenerated
+`web/src/data/*.json` + `web/public/{seat_draws.json,og.png}` (the `data/` artifacts are
+gitignored). `deploy.sh` needs `gcloud` authed as the deploy account
+(`perkarlberg@gmail.com`; `gcloud auth login` if the token fails). The step-by-step
+operator runbook is in **`CLAUDE.md`**.
+
 **Live:** https://trefyranio.web.app (Firebase Hosting, project `trefyranio`).
 Custom domain `trefyran.io` pending DNS.
 
