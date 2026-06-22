@@ -1,13 +1,29 @@
 ---
 import Base from '../layouts/Base.astro';
+import forecast from '../data/forecast.json';
 import Hero from '../components/Hero.astro';
 import Hemicycle from '../components/Hemicycle.astro';
 import TrendChart from '../components/TrendChart.astro';
 import HouseEffects from '../components/HouseEffects.astro';
 import Threshold from '../components/Threshold.astro';
 import CoalitionBuilder from '../components/CoalitionBuilder.astro';
+
+const schema = [
+  { '@context': 'https://schema.org', '@type': 'Organization',
+    name: 'trefyranio', url: 'https://trefyran.io', logo: 'https://trefyran.io/logo.png' },
+  { '@context': 'https://schema.org', '@type': 'WebSite',
+    name: 'trefyranio – valprognos för riksdagsvalet 2026',
+    url: 'https://trefyran.io', inLanguage: 'sv-SE' },
+  { '@context': 'https://schema.org', '@type': 'Dataset',
+    name: 'Senaste valprognosen för riksdagsvalet 2026',
+    description: 'Sannolikhetsprognos för riksdagsvalet 2026 baserad på en statistisk sammanvägning av opinionsmätningar och tusentals Monte Carlo-simuleringar. Sannolikheter för mandat, regering, koalitioner och fyraprocentsspärren.',
+    url: 'https://trefyran.io', inLanguage: 'sv-SE', isAccessibleForFree: true,
+    creator: { '@type': 'Organization', name: 'trefyranio' },
+    dateModified: forecast.updated,
+    keywords: ['valprognos 2026', 'riksdagsvalet 2026', 'opinionsmätningar', 'mandatfördelning', 'fyraprocentsspärren'] },
+];
 ---
-<Base>
+<Base schema={schema}>
   <Hero />
   <Hemicycle />
   <TrendChart />

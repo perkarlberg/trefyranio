@@ -7,18 +7,39 @@ const bubble = forecast.parties
   .sort((a, b) => b.p_below_4pct - a.p_below_4pct);
 const pct = (x) => Math.round(x * 100);
 const drama = forecast.swing_drama;
-const title = 'Fyraprocentsspärren 2026 – vilka partier åker ur riksdagen? | Trefyranio';
-const desc = 'Sannolikheten att varje parti hamnar under fyraprocentsspärren i riksdagsvalet 2026 – ' +
-  'och hur ett parti som åker ut kan fälla hela regeringsfrågan. Tusentals simuleringar.';
+const title = 'Fyraprocentsspärren (4-procentsspärren) 2026 – vilka partier åker ur riksdagen? | Trefyranio';
+const desc = 'Fyraprocentsspärren – 4-procentsspärren / riksdagsspärren – i riksdagsvalet 2026: ' +
+  'sannolikheten att varje parti åker ur riksdagen, och hur ett parti under 4 % kan avgöra hela regeringsfrågan.';
+
+const riskList = bubble.slice(0, 4).map((p) => `${p.name} (${pct(p.p_below_4pct)} % risk)`).join(', ');
+const faqs = [
+  { q: 'Vad är fyraprocentsspärren (4-procentsspärren)?',
+    a: 'Fyraprocentsspärren – även kallad 4-procentsspärren, 4 spärren eller riksdagsspärren – innebär att ett parti måste få minst 4 % av rösterna i hela landet för att få plats i riksdagen. Ett parti kan också komma in genom att få minst 12 % i en enskild valkrets.' },
+  { q: 'Varför finns fyraprocentsspärren och när infördes den?',
+    a: 'Spärren infördes när Sverige gick över till enkammarriksdag och tillämpades första gången i valet 1970. Syftet är att hindra att riksdagen splittras på många mycket små partier och att göra det lättare att bilda stabila regeringar – priset är att röster på partier under 4 % inte ger några mandat.' },
+  { q: 'Vilka partier riskerar att åka ur riksdagen 2026?',
+    a: `Enligt den senaste prognosen är det främst dessa partier som riskerar att hamna under spärren: ${riskList}. Siffrorna uppdateras vid varje ny opinionsmätning.` },
+  { q: 'Kan ett parti komma in i riksdagen utan att klara 4 %?',
+    a: 'Ja. Ett parti som får minst 12 % av rösterna i en enskild valkrets kommer in och tilldelas mandat där, även om det ligger under 4 % i hela landet. I praktiken är det mycket ovanligt – 4-procentsspärren är den avgörande gränsen för nästan alla partier.' },
+  { q: 'Vad händer med rösterna när ett parti åker ur riksdagen?',
+    a: 'Mandaten fördelas om mellan de partier som klarar spärren. Ett parti som faller under 4 % förlorar alltså samtliga platser, och de 349 mandaten fördelas i stället på de övriga partierna – vilket kan flytta majoriteten mellan blocken.' },
+];
+const faqSchema = {
+  '@context': 'https://schema.org', '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+};
 ---
-<Base title={title} description={desc}>
+<Base title={title} description={desc} schema={[faqSchema]}>
   <article class="section thr">
     <p class="section-label">Riksdagsvalet 2026</p>
     <h2>Fyraprocentsspärren: vilka partier åker ur riksdagen?</h2>
-    <p class="lede">Ett parti måste få minst <b>4 % av rösterna i hela landet</b> (eller 12 % i en
-      enskild valkrets) för att komma in i riksdagen. Hamnar partiet under spärren förlorar det
-      <b>samtliga mandat</b> — och rösterna fördelas om på de andra partierna. Det gör spärren till
-      valets största dramaturgi: ett enda parti som faller kan avgöra vem som kan bilda regering.</p>
+    <p class="lede">Fyraprocentsspärren – även kallad <b>4-procentsspärren</b>, <b>4 spärren</b> eller
+      <b>riksdagsspärren</b> – innebär att ett parti måste få minst <b>4 % av rösterna i hela landet</b>
+      (eller 12 % i en enskild valkrets) för att komma in i riksdagen. Hamnar partiet under spärren
+      förlorar det <b>samtliga mandat</b> — och rösterna fördelas om på de andra partierna. Det gör
+      spärren till valets största dramaturgi: ett enda parti som faller kan avgöra vem som kan bilda
+      regering.</p>
 
     <h3>Risk att åka ut</h3>
     <div class="gauges">
@@ -50,6 +71,16 @@ const desc = 'Sannolikheten att varje parti hamnar under fyraprocentsspärren i 
       })}
     </ul>
 
+    <h3>Vanliga frågor om spärren</h3>
+    <div class="faq">
+      {faqs.map((f) => (
+        <details class="faq-item">
+          <summary>{f.q}</summary>
+          <p>{f.a}</p>
+        </details>
+      ))}
+    </div>
+
     <p class="links"><a href="/">← Hela prognosen</a> · <a href="/vem-blir-statsminister">Vem blir statsminister?</a>
       · <a href="/koalitioner">Möjliga regeringar</a> · <a href="/metod">Metod</a></p>
 
@@ -63,6 +94,10 @@ const desc = 'Sannolikheten att varje parti hamnar under fyraprocentsspärren i 
       .g-fill { height: 100%; border-radius: 5px; } .g-sub { font-size: 12.5px; }
       .thr h3 { font-size: 18px; font-weight: 800; margin: 24px 0 6px; } .thr p { max-width: 64ch; }
       .drama { max-width: 64ch; padding-left: 18px; } .drama li { margin-bottom: 6px; }
+      .faq { max-width: 64ch; }
+      .faq-item { border-top: 1px solid var(--grid); padding: 10px 0; }
+      .faq-item summary { font-weight: 700; cursor: pointer; font-size: 15px; }
+      .faq-item p { margin: 8px 0 0; }
       .links { margin-top: 24px; font-size: 14px; } .links a { color: var(--muted); }
     </style>
   </article>

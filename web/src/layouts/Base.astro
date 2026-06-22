@@ -2,8 +2,8 @@
 import '../styles/global.css';
 import forecast from '../data/forecast.json';
 
-const { title = 'Valprognos 2026 – simulering av riksdagsvalet | Trefyranio', description =
-  'Datadriven prognos för riksdagsvalet 2026. Tusentals simuleringar ger sannolikheter för mandat, regering, koalitioner och fyraprocentsspärren. Uppdateras vid varje ny mätning.' } = Astro.props;
+const { title = 'Senaste valprognosen för riksdagsvalet 2026 | Trefyranio', description =
+  'Senaste valprognosen för riksdagsvalet 2026: en statistisk modell väger samman alla nya opinionsmätningar (Sifo, Novus, Ipsos m.fl.) och simulerar valet tusentals gånger – sannolikheter för mandat, regering och fyraprocentsspärren.', schema } = Astro.props;
 const updated = forecast.updated;
 const GA_ID = 'G-Z0GZ8QSCJH';
 ---
@@ -27,6 +27,9 @@ const GA_ID = 'G-Z0GZ8QSCJH';
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={`https://trefyran.io/og.png?v=${updated}`} />
+    {schema && schema.map((s) => (
+      <script type="application/ld+json" set:html={JSON.stringify(s)} />
+    ))}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;600;700;800;900&display=swap" rel="stylesheet" />

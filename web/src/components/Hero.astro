@@ -12,6 +12,9 @@ const cols = [
 <section class="hero">
   <p class="kicker">Riksdagsvalet 2026 · {forecast.weeks_to_go} veckor kvar</p>
   <h1>Vem styr Sverige efter valet?</h1>
+  <p class="hero-lede">Den senaste valprognosen för riksdagsvalet 2026 – en statistisk modell
+    väger samman alla nya opinionsmätningar och opinionsundersökningar och simulerar valet
+    tusentals gånger. Uppdateras vid varje ny mätning.</p>
 
   <div class="bar" role="img" aria-label="Sannolikhet för regeringsutfall">
     {cols.map((c) => (
@@ -39,7 +42,8 @@ const cols = [
     .hero { padding: 30px 0 26px; }
     .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
       text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
-    .hero h1 { font-size: 44px; font-weight: 900; margin: 0 0 20px; letter-spacing: -0.03em; }
+    .hero h1 { font-size: 44px; font-weight: 900; margin: 0 0 14px; letter-spacing: -0.03em; }
+    .hero-lede { font-size: 16px; color: var(--muted); margin: 0 0 22px; max-width: 60ch; line-height: 1.5; }
     .bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden;
       background: var(--grid); margin-bottom: 22px; }
     .seg.left { background: var(--bloc-left); }
