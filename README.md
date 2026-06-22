@@ -316,8 +316,49 @@ gitignored). `deploy.sh` needs `gcloud` authed as the deploy account
 (`perkarlberg@gmail.com`; `gcloud auth login` if the token fails). The step-by-step
 operator runbook is in **`CLAUDE.md`**.
 
-**Live:** https://trefyranio.web.app (Firebase Hosting, project `trefyranio`).
-Custom domain `trefyran.io` pending DNS.
+**Live:** https://trefyran.io (Firebase Hosting, project `trefyranio`;
+`trefyranio.web.app` is the origin).
+
+## SEO
+
+Search-acquisition notes, kept here as the baseline for judging future GSC performance.
+
+**Baseline — 2026-06-22** (Google Search Console, `sc-domain:trefyran.io`, 90 days to
+2026-06-19): near-zero presence — **~25 impressions, 0 clicks**, avg position ~10. Data
+only begins ~2026-06-09 (domain property freshly verified). Three pages had ever surfaced:
+`/` (pos 7.4), `/fyraprocentssparren` (pos 15), `/metod` (pos 6). The only queries above
+GSC's privacy threshold: `senaste valprognosen` (pos 2, 0 clicks), `4 spärren`,
+`4 spärren i riksdagen`.
+
+**Demand research.** With too few impressions for GSC to be informative, real query demand
+was sampled from **Google Autocomplete** (`suggestqueries`, `hl=sv&gl=se`). Findings that
+shaped the copy: the **numeral** spärr forms dominate (`4 spärren`, `4 procentsspärren`) —
+the formal `fyraprocentsspärren` barely autocompletes; `riksdagsspärren` is a real seed;
+party-specific `kommer [L/MP/KD] åka ur riksdagen` is strong; the 12 %-valkrets route has
+its own demand. Homepage cluster (`valprognos 2026`, `valprognos idag`,
+`senaste valprognosen`) confirms a freshness intent.
+
+**First pass — shipped 2026-06-22.** Strategy: win CTR on the *peripheral, winnable* spärr
+cluster first to build topical authority, then contest the head term `senaste valprognosen`.
+- **Homepage:** title → "Senaste valprognosen för riksdagsvalet 2026"; new meta + a visible
+  H1 lede framing it as an all-polls statistical prediction (matches freshness intent);
+  `Organization` / `WebSite` / `Dataset` JSON-LD.
+- **`/fyraprocentssparren`:** numeral synonyms (`4 spärren` / `4-procentsspärren` /
+  `riksdagsspärren`) in title, intro and body; a 5-question FAQ mirroring the autocomplete
+  questions (with live per-party risk numbers); `FAQPage` JSON-LD for rich-result
+  eligibility.
+
+**Operational notes.** GSC API access is ADC-based (`webmasters.readonly` scope) with
+`searchconsole.googleapis.com` enabled on the `trefyranio` GCP project — requests need the
+`X-Goog-User-Project: trefyranio` header. Google has **no API to request indexing** of
+normal pages (Indexing API is JobPosting/BroadcastEvent only); that step is a manual click
+in the GSC URL-inspection UI. `deploy.sh` refreshes the sitemap `lastmod` (recrawl hint)
+and pings IndexNow (Bing/Yandex).
+
+**Next checkpoint:** re-pull GSC ~mid-July 2026 and compare against this baseline — watch
+CTR on `senaste valprognosen` and impressions/position on the spärr cluster. If the spärr
+page gains traction, replicate the FAQ + schema pattern on `/vem-blir-statsminister` and the
+per-party pages (target `kommer [parti] åka ur riksdagen`).
 
 ## References
 
