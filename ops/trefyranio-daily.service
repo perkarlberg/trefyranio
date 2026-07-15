@@ -1,0 +1,21 @@
+[Unit]
+Description=trefyranio — fetch new polls and, if any, refit + publish the forecast
+Documentation=file:%h/trefyranio/ops/ubuntu-setup.md
+# Don't run if the network isn't up yet (matters when the timer fires near boot).
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/trefyranio
+ExecStart=%h/trefyranio/ops/daily_refresh.sh
+# The refit is ~10 min; give the whole fetch→refit→simulate→build→deploy room.
+TimeoutStartSec=30min
+# systemd user services start from an almost-empty PATH. Add the places
+# python venv shims, node/npm, and the gcloud CLI (apt or snap) actually live.
+Environment=PATH=%h/trefyranio/.venv/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin
+# TZ only affects log timestamps the script itself prints (it uses UTC anyway);
+# the schedule's timezone is set on the .timer, not here.
+
+[Install]
+WantedBy=default.target

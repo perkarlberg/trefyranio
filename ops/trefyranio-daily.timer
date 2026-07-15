@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the trefyranio daily forecast refresh at 07:00 (Europe/Stockholm)
+
+[Timer]
+Unit=trefyranio-daily.service
+# 07:00 Swedish local time year-round (systemd >= 252 honours the tz suffix;
+# Ubuntu 24.04 ships 255). DST is handled for you.
+OnCalendar=*-*-* 07:00:00 Europe/Stockholm
+# No catch-up: if the box was off at 07:00, DON'T fire on the next boot —
+# just wait for the following day's 07:00.
+Persistent=false
+
+[Install]
+WantedBy=timers.target
