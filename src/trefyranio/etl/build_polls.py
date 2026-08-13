@@ -1,8 +1,10 @@
 """Build the unified poll spine -> data/processed/polls.parquet.
 
-Phase 1 feed: SwedishPolls (primary). Wikipedia 2026 is wired in later as a
-cross-check; SwedishPolls already covers all current pollsters and refreshes
-within days, so it carries v1 on its own.
+Feed: SwedishPolls (primary), which covers every current pollster but lags
+publication by a few days. ``data/manual_polls.csv`` supplements it with
+hand-entered polls that are out in the press but not yet upstream; those rows
+drop out automatically once SwedishPolls catches up (see
+:mod:`trefyranio.etl.manual_polls`).
 
 Run:  python -m trefyranio.etl.build_polls
 """
@@ -14,16 +16,19 @@ from pathlib import Path
 
 import pandas as pd
 
-from trefyranio.etl import swedish_polls
+from trefyranio.etl import manual_polls, swedish_polls
 from trefyranio.etl.schema import POLLSTER_DISPLAY
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = REPO_ROOT / "data" / "raw"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
+MANUAL_POLLS = REPO_ROOT / "data" / "manual_polls.csv"
 
 
 def build(refresh: bool = True) -> pd.DataFrame:
-    polls = swedish_polls.load(RAW_DIR, refresh=refresh)
+    polls = swedish_polls.load(
+        RAW_DIR, refresh=refresh, supplement=manual_polls.load(MANUAL_POLLS)
+    )
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     out = PROCESSED_DIR / "polls.parquet"
     polls.to_parquet(out, index=False)

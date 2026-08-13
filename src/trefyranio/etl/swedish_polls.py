@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from trefyranio.etl import manual_polls
 from trefyranio.etl.schema import NAMED_PARTIES, OTHER, TIDY_COLUMNS, validate_polls
 
 CSV_URL = "https://raw.githubusercontent.com/MansMeg/SwedishPolls/master/Data/Polls.csv"
@@ -43,6 +44,9 @@ def _poll_ids(raw: pd.DataFrame) -> pd.Series:
     even for old polls whose exact dates are missing (without it, decades of
     NaT-dated monthly polls hash to the same id). Any residual exact-key
     duplicates are disambiguated with a deterministic per-key counter.
+
+    The two-letter prefix marks provenance (``sw_`` upstream, ``ma_`` for a
+    hand-entered supplement row), so a manual poll is greppable in the spine.
     """
     # Build the key by stringifying each cell with Python str() (NaT/NaN ->
     # "NaT"/"nan"), then joining. Series "+" concatenation propagates NA in
@@ -53,12 +57,25 @@ def _poll_ids(raw: pd.DataFrame) -> pd.Series:
     base = key.map(lambda k: hashlib.sha1(k.encode()).hexdigest()[:12])
     dup = raw.groupby(key, sort=False).cumcount()
     suffix = dup.map(lambda i: "" if i == 0 else f"_{i}")
-    return SOURCE[:2].lower() + "_" + base + suffix
+    prefix = raw["_source"].map(lambda s: s[:2].lower()) + "_"
+    return prefix + base + suffix
 
 
-def to_tidy(csv_path: Path) -> pd.DataFrame:
-    """Transform the raw SwedishPolls CSV into the tidy long poll table."""
+def to_tidy(csv_path: Path, supplement: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Transform the raw SwedishPolls CSV into the tidy long poll table.
+
+    ``supplement`` holds hand-entered polls not yet upstream (see
+    :mod:`trefyranio.etl.manual_polls`); they are merged in at the raw-wide
+    stage so they go through identical normalization and id assignment.
+    """
     raw = pd.read_csv(csv_path)
+    raw, added, superseded = manual_polls.merge(
+        raw, manual_polls.load_empty() if supplement is None else supplement
+    )
+    if added:
+        print(f"supplement: +{len(added)} poll(s) not yet upstream — {', '.join(added)}")
+    if superseded:
+        print(f"supplement: {len(superseded)} now upstream, dropped — {', '.join(superseded)}")
 
     for col in ("PublDate", "collectPeriodFrom", "collectPeriodTo"):
         raw[col] = pd.to_datetime(raw[col], errors="coerce")
@@ -83,7 +100,7 @@ def to_tidy(csv_path: Path) -> pd.DataFrame:
 
     long = raw.melt(
         id_vars=[
-            "poll_id", "pollster", "commissioner",
+            "poll_id", "pollster", "commissioner", "_source",
             "PublDate", "collectPeriodFrom", "collectPeriodTo", "n", "uncertain",
         ],
         value_vars=NAMED_PARTIES + [OTHER],
@@ -94,18 +111,19 @@ def to_tidy(csv_path: Path) -> pd.DataFrame:
             "PublDate": "pub_date",
             "collectPeriodFrom": "field_start",
             "collectPeriodTo": "field_end",
+            "_source": "source",
         }
     )
-    long["source"] = SOURCE
     long["share"] = long["share"].fillna(0.0)
 
     long = long[TIDY_COLUMNS].sort_values(["pub_date", "poll_id", "party"])
     return validate_polls(long.reset_index(drop=True))
 
 
-def load(raw_dir: Path, refresh: bool = True) -> pd.DataFrame:
+def load(raw_dir: Path, refresh: bool = True,
+         supplement: pd.DataFrame | None = None) -> pd.DataFrame:
     """Download (unless cached) and return the tidy SwedishPolls table."""
     csv_path = raw_dir / "swedish_polls.csv"
     if refresh or not csv_path.exists():
         csv_path = download(raw_dir)
-    return to_tidy(csv_path)
+    return to_tidy(csv_path, supplement=supplement)

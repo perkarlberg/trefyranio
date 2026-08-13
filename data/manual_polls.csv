@@ -1,0 +1,11 @@
+# Hand-entered polls not yet in SwedishPolls. Tracked in git (data/raw/ and
+# data/processed/ are not). Columns mirror the SwedishPolls layout exactly;
+# party shares are PERCENT (30.2, not 0.302). "note" is ours — cite the source.
+#
+# Normally EMPTY. Add a row only to publish a forecast ahead of upstream, then
+# delete it once SwedishPolls has the poll (the merge already ignores it by
+# then — dedupe key is house + collectPeriodTo, upstream wins).
+#
+# Example row, kept commented for the format:
+# 2026-aug,Demoskop,16.8,2.4,7.3,7.5,30.2,6.5,6.6,20.2,NA,NA,2016,2026-08-12,2026-07-29,2026-08-10,FALSE,Demoskop,Aftonbladet/SvD via demoskop.se
+PublYearMonth,Company,M,L,C,KD,S,V,MP,SD,FI,Uncertain,n,PublDate,collectPeriodFrom,collectPeriodTo,approxPeriod,house,note

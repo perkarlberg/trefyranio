@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from trefyranio.etl import swedish_polls
+from trefyranio.etl import manual_polls, swedish_polls
 from trefyranio.etl.schema import SIMPLEX_PARTIES
 
 RAW_COLUMNS = [
@@ -64,6 +64,88 @@ def test_no_id_collision_for_undated_polls(tmp_path):
     months must get distinct poll_ids."""
     tidy = swedish_polls.to_tidy(_synthetic_raw(tmp_path))
     assert tidy["poll_id"].nunique() == 3  # exactly the three input polls
+
+
+# --- manual supplement -----------------------------------------------------
+
+# A poll upstream hasn't published yet: same house as no existing row's
+# field-end, so it must be ADDED.
+_FRESH = ["2026-aug", "Aftonbladet", 16.8, 2.4, 7.3, 7.5, 30.2, 6.5, 6.6, 20.2,
+          0.0, None, 2016, "2026-08-12", "2026-07-29", "2026-08-10", False,
+          "Demoskop"]
+
+
+def _supplement(rows) -> pd.DataFrame:
+    return pd.DataFrame(rows, columns=manual_polls.RAW_COLUMNS)
+
+
+def test_supplement_adds_poll_missing_upstream(tmp_path):
+    raw = _synthetic_raw(tmp_path)
+    base = swedish_polls.to_tidy(raw)
+    tidy = swedish_polls.to_tidy(raw, supplement=_supplement([_FRESH]))
+
+    assert tidy["poll_id"].nunique() == base["poll_id"].nunique() + 1
+
+    added = tidy[tidy["pollster"] == "Demoskop"]
+    assert not added.empty
+    # Normalized like any other poll: percent -> fraction, full simplex, sums ~1.
+    assert float(added[added["party"] == "S"]["share"].iloc[0]) == pytest.approx(0.302)
+    assert added["share"].sum() == pytest.approx(1.0, abs=1e-9)
+    # Provenance is preserved rather than mislabelled as upstream.
+    assert (added["source"] == manual_polls.SOURCE).all()
+    assert added["poll_id"].iloc[0].startswith("ma_")
+    assert (tidy[tidy["pollster"] == "Novus"]["source"] == "SwedishPolls").all()
+
+
+def test_supplement_row_drops_once_upstream_has_it(tmp_path):
+    """The whole point: no duplicate poll when SwedishPolls catches up."""
+    raw = _synthetic_raw(tmp_path)
+    # The synthetic upstream already contains a Novus poll ending 2026-05-28;
+    # a supplement row for the same house+field-end must be ignored, even with
+    # a different publication date and sample size than we typed in.
+    stale = ["2026-maj", "TV4", 17.3, 2.5, 6.1, 4.5, 33.9, 8.6, 6.6, 18.3, 0.0,
+             None, 4000, "2026-05-30", "2026-05-20", "2026-05-28", False, "Novus"]
+
+    base = swedish_polls.to_tidy(raw)
+    tidy = swedish_polls.to_tidy(raw, supplement=_supplement([stale]))
+
+    assert tidy["poll_id"].nunique() == base["poll_id"].nunique()
+    assert not (tidy["source"] == manual_polls.SOURCE).any()
+    # Upstream's numbers win — n stays 4542, not the 4000 we typed.
+    assert tidy[tidy["pollster"] == "Novus"]["n"].iloc[0] == 4542
+
+
+def test_supplement_rejects_fractions_typed_as_percent(tmp_path):
+    """A share typed as 0.302 would otherwise model S as a 0.3% party."""
+    path = tmp_path / "manual_polls.csv"
+    bad = list(_FRESH)
+    for i in range(2, 10):  # the named-party columns
+        bad[i] = bad[i] / 100.0
+    _supplement([bad]).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="percentages"):
+        manual_polls.load(path)
+
+
+def test_supplement_requires_field_end(tmp_path):
+    path = tmp_path / "manual_polls.csv"
+    bad = list(_FRESH)
+    bad[15] = None  # collectPeriodTo — the dedupe key
+    _supplement([bad]).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="collectPeriodTo"):
+        manual_polls.load(path)
+
+
+def test_missing_supplement_file_is_fine(tmp_path):
+    assert manual_polls.load(tmp_path / "nope.csv").empty
+
+
+def test_shipped_supplement_file_parses():
+    """The committed CSV must stay loadable — a typo here breaks every build."""
+    path = Path(__file__).resolve().parents[1] / "data/manual_polls.csv"
+    if path.exists():
+        manual_polls.load(path)  # raises on malformed rows
 
 
 @pytest.mark.skipif(
