@@ -6,6 +6,20 @@ const { title = 'Senaste valprognosen för riksdagsvalet 2026 | Trefyranio', des
   'Senaste valprognosen för riksdagsvalet 2026: en statistisk modell väger samman alla nya opinionsmätningar (Sifo, Novus, Ipsos m.fl.) och simulerar valet tusentals gånger – sannolikheter för mandat, regering och fyraprocentsspärren.', schema } = Astro.props;
 const updated = forecast.updated;
 const GA_ID = 'G-Z0GZ8QSCJH';
+
+// Canonical URL, normalized to the no-trailing-slash form Firebase serves 200 on.
+// Done explicitly rather than relying on astro.config's trailingSlash affecting
+// Astro.url at build time — a self-referential canonical that 301s is worth
+// pinning down deterministically.
+const canonicalPath = Astro.url.pathname.replace(/(.)\/$/, '$1');
+const canonical = new URL(canonicalPath, 'https://trefyran.io').href;
+
+// The eight party pages are otherwise orphaned: nothing linked to /parti/*, so
+// the only page Google crawls had no path to them. Linked site-wide, not just
+// from the homepage.
+const partyLinks = forecast.parties
+  .filter((p) => p.code !== 'Övr')
+  .map((p) => ({ href: `/parti/${p.code.toLowerCase()}`, code: p.code, name: p.name }));
 ---
 <!doctype html>
 <html lang="sv">
@@ -16,12 +30,12 @@ const GA_ID = 'G-Z0GZ8QSCJH';
     <meta name="description" content={description} />
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="canonical" href={new URL(Astro.url.pathname, 'https://trefyran.io').href} />
+    <link rel="canonical" href={canonical} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="sv_SE" />
-    <meta property="og:url" content={new URL(Astro.url.pathname, 'https://trefyran.io').href} />
+    <meta property="og:url" content={canonical} />
     <meta property="og:image" content={`https://trefyran.io/og.png?v=${updated}`} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -73,6 +87,11 @@ const GA_ID = 'G-Z0GZ8QSCJH';
           <a href="/metod">Metod</a>
           <a href="/code">Källkod</a>
         </nav>
+        <nav class="foot-nav foot-parties" aria-label="Partiprognoser">
+          {partyLinks.map((p) => (
+            <a href={p.href}>{p.name}</a>
+          ))}
+        </nav>
         <p>Uppdaterad {updated}. Prognosmodell trefyranio, av Krukis Data Science.</p>
         <p class="faint">Data: Valmyndigheten, SCB, SwedishPolls.
           Detta är en statistisk prognos, inte en förutsägelse.</p>
@@ -96,6 +115,8 @@ const GA_ID = 'G-Z0GZ8QSCJH';
       .foot-nav { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
       .foot-nav a { color: var(--ink); text-decoration: none; font-weight: 700; font-size: 14px; }
       .foot-nav a:hover { text-decoration: underline; }
+      .foot-parties { gap: 14px; margin-top: -4px; }
+      .foot-parties a { font-weight: 400; font-size: 13px; color: var(--muted); }
     </style>
   </body>
 </html>

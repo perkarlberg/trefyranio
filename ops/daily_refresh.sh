@@ -18,7 +18,7 @@ log() { echo "==> [$(date -u +%FT%TZ)] $*"; }
 
 cd "$ROOT"
 
-log "Fetching latest polls (SwedishPolls + Wikipedia 2026)"
+log "Fetching latest polls (SwedishPolls + data/manual_polls.csv)"
 "$PY" -m trefyranio.etl.build_polls
 
 # Branch on the guard's exit code: 0 = new poll, 10 = nothing new, 2 = undetermined.
