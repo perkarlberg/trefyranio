@@ -90,7 +90,7 @@ def build_forecast(as_of: str, weeks_to_go: int, counts: dict, latest_poll: dict
         "election_day": gov.get("election_day", "2026-09-13"),
         "weeks_to_go": weeks_to_go,
         "majority": MAJORITY,
-        "counts": counts,            # {polls, elections, sims}
+        "counts": counts,            # {polls, elections, sims, cycle_polls}
         "latest_poll": latest_poll,  # {pollster, date}
         "government": {
             "right": gov["p_right_majority"],
@@ -227,8 +227,16 @@ def build() -> None:
     n_elections = int(results["election_year"].nunique())
     gov = json.loads((PROCESSED_DIR / "government_forecast.json").read_text())
     n_sim = int(gov.get("n_sim", 0))
-    latest = cycle.loc[cycle["date"].idxmax()]
-    counts = {"polls": n_polls, "elections": n_elections, "sims": n_sim}
+    # Tie-break on pub_date: two houses often share a field-end (Sifo and Novus
+    # both ended 2026-08-16), and idxmax picks whichever row came first, which
+    # labelled the site with the older-published of the two.
+    latest = cycle.sort_values(["date", "pub_date"]).iloc[-1]
+    # cycle_polls is what the scheduled refresh diffs on — the *count* of polls
+    # in the fit, not the latest date. A new poll sharing a field-end with the
+    # published one (or back-filled with an older one) moves the count but not
+    # the max date, and the date-only guard skipped exactly that case.
+    counts = {"polls": n_polls, "elections": n_elections, "sims": n_sim,
+              "cycle_polls": int(cycle["poll_id"].nunique())}
     latest_poll = {"pollster": str(latest["pollster"]), "date": latest["date"].strftime("%Y-%m-%d")}
 
     WEB_DATA_DIR.mkdir(parents=True, exist_ok=True)
