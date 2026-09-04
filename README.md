@@ -108,9 +108,11 @@ accumulating over the H-week gap, supplies the realized poll-miss spread.
   ~uniform-pp band while protecting the 4%-threshold survival probabilities.
 - **Correlated within blocs** — a factor model on the forward innovation gives
   within-bloc co-movement so bloc-total / government-formation variance isn't
-  understated. `MISS_RHO`=0.12 is **estimated from data** (bloc-total coverage:
-  iid under-covers at 75–83%, ρ≈0.12 reaches 85%, consistent across the 4- and
-  6-cycle backtests) rather than assumed.
+  understated. `MISS_RHO`=0.35 is **estimated from data** (bloc-total coverage:
+  iid under-covers at 75%, ρ≈0.35 is the smallest reaching 85%) rather than
+  assumed. Recalibrated 2026-09-04 together with σ(H) when `KAPPA` went 200→1500:
+  a latent that tracks polls more tightly is more confident per party, so more of
+  the bloc-total spread must come from shared error to hold coverage.
 
 ### Fundamentals prior (implemented, gated to 0)
 
@@ -128,6 +130,59 @@ by the time we forecast. So `FUND_WEIGHT_PER_WEEK = 0` — the machinery stays
 (re-testable with `python -m trefyranio.backtest fundamentals`), shipped inert, like
 the rejected momentum term. We don't ship a prior the backtest can't justify.
 
+### Responsiveness — how fast the latent may move (2026-09-04 study)
+
+Asked late in the 2026 campaign whether the model was too sluggish to follow a
+moving race, we measured it. Three findings, in order of how much they matter.
+
+**There is no working momentum term, and there hasn't been.** `use_velocity` is
+off, and `drift` is a *single* constant slope per party over the whole ~209-week
+cycle, hard-shrunk by `DRIFT_SIGMA`. Fitted 2026 drift for S: −0.003pp/week,
+against a realized latent slope of −0.071pp/week over the preceding six weeks. The
+term captures ~4% of the movement. Docstrings claiming the local-linear-trend
+"estimates and projects momentum" described a branch that does not ship.
+
+**Responsiveness was actually governed by `KAPPA`, and `KAPPA` was wrong.** In
+`DirichletMultinomial(alpha=KAPPA·p, N)` a poll's effective sample size saturates
+at ~`KAPPA`, so at 200 a 5,700-respondent Novus counted like 200 people. Measured
+against same-pollster poll pairs ≤10 days apart (which cancel the house effect),
+the real idiosyncratic n_eff is ~1,700–2,500 — consistent across all seven houses,
+182 pairs. That is a factual error about how noisy polls are, not a taste in
+smoothing. `KAPPA` is now 1500 (damped below the measured value; see the constant's
+comment), with σ(H) and `MISS_RHO` recalibrated on the new fits.
+
+**Tracking polls better is not the same as forecasting the election better, and
+the difference is horizon-dependent.** Five arms × 4 cycles × 2 late cuts, scored
+on held-out polls (high N) and on the actual result (n=4, weak):
+
+| | held-out poll MAE, H=2 | election MAE, H=2 | election MAE, H=6 |
+|---|---|---|---|
+| base (σ=.03, κ=200) | 0.994 | 1.163 | **1.352** |
+| velocity on | 0.957 | 1.188 | 1.371 |
+| κ=1500 | 0.948 | **1.142** | 1.414 |
+| σ=.06 | 0.902 | 1.214 | 1.378 |
+| σ=.06 + κ=1500 | **0.897** | 1.152 | 1.419 |
+
+Every responsive arm nowcasts better in 4/4 cycles (paired cluster bootstrap, CIs
+exclude 0). Election-day accuracy is a different story: near the election the
+`KAPPA` fix helps (H=0 pooled point MAE 1.197→1.123, better in **all four
+cycles**), far from it the same fix hurts (H=14: 1.298→1.390, worse in three of
+four). Raising `SIGMA_LVL` was rejected — it buys the most nowcast accuracy and
+costs election accuracy at both horizons.
+
+> ⚠️ **Known regression, must fix before the next cycle.** `KAPPA=1500` was
+> shipped during the final week of the 2026 campaign, i.e. in the horizon regime
+> where the study shows it winning. It measurably *degrades* the H=14 forecast.
+> A model that runs a whole cycle needs `KAPPA` (or the smoothing it interacts
+> with) to be horizon-aware, not one constant. Re-run the study with 2026 as a
+> fifth cycle before trusting the early-cycle forecast.
+
+A separate, unaddressed consequence: the trend line the site plots is the shrunk
+forecasting latent, which moves ~13% as fast week-to-week as a 30-day poll
+average. It is a measurably worse description of *where opinion is now* than it
+needs to be. Decoupling the displayed nowcast from the forecast latent is a
+presentation change that would not touch the forecast.
+
 ### Convergence (fixed)
 
 An earlier version did **not** converge — 4-chain diagnostics showed **r-hat
@@ -136,7 +191,9 @@ Neal's-funnel geometry NUTS couldn't navigate, so the posterior mean was
 seed-sensitive (SD ±1.5pp across seeds). Fixed by:
 
 - **fixing the walk scales** (`SIGMA_LVL`, `SIGMA_HOUSE`, `KAPPA`) instead of
-  sampling them — removes the funnel;
+  sampling them — removes the funnel. Fixed is not the same as *right*: `KAPPA`
+  was hand-picked at 200 and stayed there until the 2026 responsiveness study
+  measured it (see below);
 - **dropping the per-week velocity** (the main mixing culprit) for a single
   per-party **drift** (`DRIFT_SIGMA`, 8 well-identified params) — convergence-safe;
 - **multiple chains** (`num_chains=4`, vectorized) with an r-hat check baked into
@@ -241,7 +298,7 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
 - [x] **Phase 5** — backtest & calibration (`backtest.py`). Refits the converged
       model across **four cycles (2010, 2014, 2018, 2022)** from polls-only,
       horizon-matched at H=0 and H=14, and calibrates the **model-carried forward
-      projection** (coverage-cal to 85%, σ(H) ~1.55→1.80pp; the induced share-space
+      projection** (coverage-cal to 85%, σ(H) ~1.65→1.95pp; the induced share-space
       spread is ~uniform-pp). Point MAE 0.6–1.5pp. Damped recent-momentum tested on
       all 4 cycles and rejected (noise-level, overfit argmax) → drift-only. ⚠️ The
       earlier "momentum thesis confirmed (velocity)" result was on the
@@ -249,9 +306,11 @@ enrichments requiring outreach to GU / pollsters — not blockers for v1.
       - [x] **6-cycle A/B (2002, 2006)** — tested adding the two pre-2010 cycles.
             **Rejected for σ**: their bigger misses over-cover the 2010+ regime
             (91% vs 85%) — a regime mismatch, so σ stays 4-cycle. **`MISS_RHO`
-            estimated from data** at 0.12 (consistent 4- vs 6-cycle), replacing the
+            estimated from data** (consistent 4- vs 6-cycle), replacing the
             assumed 0.2. (FP=L and SD-as-own-category are already handled in the
             data spine, so no special pre-2010 munging was needed.)
+      - [x] **Responsiveness study (2026-09-04)** — see "Responsiveness" below.
+            `KAPPA` 200→1500, σ(H) and `MISS_RHO` recalibrated on the new fits.
 - [~] **Phase 6** — Astro webapp (Swedish, prime-era 538 look) + Cloudflare
       Pages + local recompute/publish.
   - [x] `parties.py` (verified palette), `web_export.py` (→ `web/src/data/*.json`:

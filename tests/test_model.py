@@ -32,10 +32,11 @@ from trefyranio.model import (
 
 def test_miss_sigma_grows_with_horizon():
     # Tighter near the election, wider far out. Model-carried calibration on the
-    # 4-cycle forward projection: ~1.55pp at H=0, ~1.80pp at the 14-week point.
+    # 4-cycle forward projection: ~1.65pp at H=0, ~1.95pp at the 14-week point
+    # (recalibrated 2026-09-04 under KAPPA=1500; was 1.55/1.80 under KAPPA=200).
     assert miss_sigma_for_horizon(0) < miss_sigma_for_horizon(8) < miss_sigma_for_horizon(20)
-    assert miss_sigma_for_horizon(14) == pytest.approx(0.018, abs=2e-3)
-    assert miss_sigma_for_horizon(0) == pytest.approx(0.0155, abs=1e-3)
+    assert miss_sigma_for_horizon(14) == pytest.approx(0.0195, abs=2e-3)
+    assert miss_sigma_for_horizon(0) == pytest.approx(0.0165, abs=1e-3)
 
 
 def test_alr_softmax_roundtrip():

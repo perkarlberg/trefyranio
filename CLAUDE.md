@@ -66,9 +66,21 @@ the source in the `note` column. Normal state of the file is empty.
 - **Occasional, not per-update:** `python -m trefyranio.backtest all` recalibrates the
   uncertainty (`MISS_SIGMA`/`MISS_RHO`, ~25 min, cached fits); `make_valkrets_geo.py`
   rebuilds the map geometry; the results/ratings spines change only at a new election.
-- Tested-but-rejected terms ship **inert** and are re-testable, not deleted: recent
-  momentum (`use_velocity`/drift, φ=0) and the cost-of-ruling fundamentals prior
-  (`FUND_WEIGHT_PER_WEEK=0`). Re-enable only if a backtest justifies it.
+- **`MISS_SIGMA`/`MISS_RHO` are conditional on `KAPPA`/`SIGMA_LVL`.** They are
+  coverage-calibrated on cached backtest fits, so changing how tightly the latent
+  tracks polls invalidates them. Touching either scale means: `backtest fit --force`
+  (~1.5 h, 12 fits) → `calibrate_forward` + `calibrate_rho` → update the constants →
+  `backtest analyze` to verify → only then refit live and deploy. Back up
+  `data/processed/backtests/conv_*.npz` first so the old calibration can be restored.
+- Tested-but-rejected terms ship **inert** and are re-testable, not deleted:
+  `use_velocity=False` and the cost-of-ruling fundamentals prior
+  (`FUND_WEIGHT_PER_WEEK=0`). Re-enable only if a backtest justifies it. The
+  per-party `drift` is NOT in this category — it ships active but empirically fits
+  to ~0 (see README "Responsiveness"); the model has no working momentum term.
+- ⚠️ **`KAPPA=1500` has a known H=14 regression** (shipped 2026-09-04 during the
+  final campaign week, where the study shows it winning; it degrades the
+  early-cycle forecast). Re-run the responsiveness study with 2026 as a fifth
+  cycle before trusting a forecast made far from election day.
 - The map/forecast totals are intentionally the **central scenario** (`allocate_national`
   on mean shares), which can differ from the mean-of-draws seat averages — don't "fix"
   this; it's documented.

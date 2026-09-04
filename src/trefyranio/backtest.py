@@ -17,7 +17,10 @@ forecast to the known result. Two jobs:
    phi over the H-week gap (Gardner & McKenzie 1985), and check whether any
    (phi, W) beats a flat carry of the trend at the cut. On 4 cycles the effect is
    noise-level and the argmax is undamped (overfit), so the live model ships with
-   NO separate momentum term — the per-party drift already captures trend.
+   NO separate momentum term. NB: the old claim here — "the per-party drift
+   already captures trend" — is FALSE, as the 2026-09-04 responsiveness study
+   showed (drift fits to ~0). The model has no momentum term at all; late
+   responsiveness comes from KAPPA. See README "Responsiveness".
 
 Four cycles: 2010, 2014, 2018, 2022 (current party system, dense polling). Fits
 are slow (~3 min each, 8 fits), so `fit_all()` saves raw posteriors to

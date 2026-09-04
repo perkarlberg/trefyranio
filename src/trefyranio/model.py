@@ -1,11 +1,15 @@
 """Dynamic Bayesian poll-aggregation model (Phase 3).
 
 Top-down national model of the eight Riksdag parties (+ "other"), in
-additive-log-ratio (ALR) space relative to S. The latent vote share follows a
-**damped local-linear-trend** — it carries both a *level* and a *velocity*, so
-momentum is estimated and projected to election day. This is the deliberate fix
-for the inertia that makes plain moving-averages / random-walks lag a party
-that is genuinely rising or falling.
+additive-log-ratio (ALR) space relative to S.
+
+WHAT ACTUALLY SHIPS: a local-LEVEL random walk plus a single constant per-party
+`drift`. The damped local-linear-trend below is implemented but OFF
+(`use_velocity=False`), and the 2026-09-04 responsiveness study found the drift
+term fits to ~0 (it is one slope over a ~209-week cycle, hard-shrunk by
+DRIFT_SIGMA), so it carries ~4% of realized late movement. Treat this model as
+having NO working momentum term; how fast the latent may move is set by
+SIGMA_LVL and, mostly, by KAPPA. See README "Responsiveness".
 
   velocity_t = phi * velocity_{t-1} + sigma_vel * z          (phi < 1 damps it)
   level_t    = level_{t-1} + velocity_{t-1} + sigma_lvl * z
@@ -106,8 +110,11 @@ CYCLE_2026 = cycle_for(2026)
 # the converged model across FOUR cycles (2010/2014/2018/2022) → a variance-
 # accumulation curve. Coverage-calibrated (85% of the 80% interval), not moment-
 # matched (4-cycle errors are heavy-tailed; moment-match under-covers at H=14).
-MISS_SIGMA_FLOOR = 0.0155       # 1.55pp election-eve (H≈0), coverage-cal target
-MISS_SIGMA_VAR_SLOPE = 5.982e-6  # share² per week → 1.80pp at H=14 (total spread,
+# RECALIBRATED 2026-09-04 on the KAPPA=1500 fits — the miss layer is conditional
+# on how tightly the latent tracks polls, so raising KAPPA invalidates a curve fit
+# under KAPPA=200 (the old pair was 0.0155 / 5.982e-6 → 1.55pp / 1.80pp).
+MISS_SIGMA_FLOOR = 0.0165       # 1.65pp election-eve (H≈0), coverage-cal target
+MISS_SIGMA_VAR_SLOPE = 7.714e-6  # share² per week → 1.95pp at H=14 (total spread,
 #   not an added miss: the projection starts from the well-pinned last-poll latent)
 
 
@@ -133,11 +140,14 @@ FWD_FLOOR_PQ = 0.0384           # = p(1-p) at p=4%; parties below 4% damped
 # Factor model on the logit innovation: each party's z = sqrt(rho)·(shared bloc
 # factor) + sqrt(1-rho)·(idiosyncratic), so the within-bloc correlation is rho
 # while the per-party marginal is preserved. ESTIMATED FROM DATA (Phase 3) by
-# bloc-total coverage: iid (rho=0) under-covers bloc totals (75–83%), and rho≈0.12
-# is the smallest value reaching 85% — consistent across the 4- and 6-cycle
-# backtests. Modest and a bit noisy (~8 bloc-cycle points), but data-grounded
-# rather than assumed. Groups mirror simulate's blocs.
-MISS_RHO = 0.12
+# bloc-total coverage: iid (rho=0) under-covers bloc totals, and we ship the
+# smallest rho reaching 85%. RECALIBRATED 2026-09-04 with KAPPA=1500: was 0.12
+# under KAPPA=200, now 0.35 (iid bloc coverage 75%). The jump is coherent rather
+# than alarming — a latent that tracks polls more tightly is more confident per
+# party, so more of the bloc-total spread has to come from SHARED error to keep
+# bloc coverage at target. Noisy either way (~8 bloc-cycle points).
+# Groups mirror simulate's blocs.
+MISS_RHO = 0.35
 _MISS_GROUP = {"S": 1, "M": 0, "SD": 0, "C": 2, "V": 1, "KD": 0, "MP": 1, "L": 0, "Övr": 3}
 MISS_GROUP_IDX = np.array([_MISS_GROUP[p] for p in PARTY_ORDER])
 
@@ -354,7 +364,19 @@ def _full_logits(alr: jnp.ndarray) -> jnp.ndarray:
 # funnels; values picked so the trend tracks the polls without overfitting.
 SIGMA_LVL = 0.03      # per-week level innovation (ALR)
 SIGMA_HOUSE = 0.05    # per-pollster house-effect scale (ALR)
-KAPPA = 200.0         # Dirichlet-Multinomial concentration (overdispersion)
+# Dirichlet-Multinomial concentration (overdispersion). DM(alpha=KAPPA*p, N) has
+# Var(X/N) = p(1-p)/N · (N+KAPPA)/(1+KAPPA), so a poll's EFFECTIVE sample size
+# saturates at ~KAPPA: at the old 200 a 5,700-respondent Novus counted like 200
+# people, and the latent barely moved when new polls landed.
+# MEASURED, not picked: same-pollster poll PAIRS taken ≤10 days apart cancel the
+# house effect, so Var(p1-p2) = 2·Var(poll noise) + Var(real movement) bounds the
+# idiosyncratic noise. Over 182 pairs (2010+) that implies n_eff ≈ 1,700–2,500 —
+# consistent across all seven houses, i.e. polls are about as precise as their
+# nominal n once the house lean is removed. Shipped at 1500 rather than the
+# measured ~2200: KAPPA must also absorb non-sampling error the pair test cannot
+# see (within-cycle house drift, mode effects, field-wide transients), and 1500
+# is the value actually A/B-tested against 200 rather than a grid argmax.
+KAPPA = 1500.0
 DRIFT_SIGMA = 0.0015  # per-week per-party drift prior (ALR) — momentum, projected
 SIGMA_VEL = 0.006     # velocity innovation (only if use_velocity; also fixed)
 VEL_DAMP = 0.8        # velocity damping
